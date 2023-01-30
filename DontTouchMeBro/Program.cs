@@ -56,9 +56,14 @@ namespace DontTouchMeBro
                 result = p.StandardOutput.ReadToEnd();
             }
             if (result.Contains("Started"))
-                trayIcon.Icon = iconYes;
+            {
+                SetDevice(true);
+            }
+
             else
-                trayIcon.Icon = iconNo;
+            {
+                SetDevice(false);
+            }
         }
 
         static void OnClick(object sender, EventArgs e)
@@ -79,13 +84,13 @@ namespace DontTouchMeBro
 
             if (trayIcon.Icon == iconYes)
             {
-                startInfo.Arguments = "/disable-device \"{instanceID}\"";
-                trayIcon.Icon = iconNo;
+                startInfo.Arguments = $"/disable-device \"{instanceID}\"";
+                SetDevice(false);
             }
             else
             {
-                startInfo.Arguments = "/enable-device \"{instanceID}\"";
-                trayIcon.Icon = iconYes;
+                startInfo.Arguments = $"/enable-device \"{instanceID}\"";
+                SetDevice(true);
             }
             Process.Start(startInfo);
         }
@@ -94,6 +99,20 @@ namespace DontTouchMeBro
         {
             trayIcon.Dispose();
             Application.Exit();
+        }
+
+        static void SetDevice(bool enabled)
+        {
+            if (enabled)
+            {
+                trayIcon.Icon = iconYes;
+                trayIcon.Text = "Device Enabled";
+            }
+            else
+            {
+                trayIcon.Icon = iconNo;
+                trayIcon.Text = "Device Disabled";
+            }
         }
     }
 }
