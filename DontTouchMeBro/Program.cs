@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.IO;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -12,12 +13,24 @@ namespace DontTouchMeBro
 
         static readonly Icon iconYes = Properties.Resources.YesIcon;
         static readonly Icon iconNo = Properties.Resources.NoIcon;
-        static readonly string instanceID = @"HID\ELAN2D25&COL01\5&2B77D6B&0&0000";
+        static string instanceID = "";
+        static string path;
 
 
         [STAThread]
         static void Main()
         {
+            try
+            {
+                path = Path.Combine(Directory.GetCurrentDirectory(), "device-id.txt");
+                instanceID = File.ReadAllText(path);
+            }
+            catch (Exception)
+            {
+                MessageBox.Show($"Please meake a text file at\n{path}\n with the content of the Device you want to control.", "Missing config file");
+                return;
+            }
+            
             Mutex mutex = new Mutex(false, "DontTouchMeBro!");
             if (mutex.WaitOne(0, false))
             {
@@ -59,7 +72,11 @@ namespace DontTouchMeBro
             {
                 SetDevice(true);
             }
-
+            else if (result.Contains("No devices were found on the system."))
+            {
+                MessageBox.Show($"Could not find a device with the name\n\n{instanceID}\n\nPlease check the instance name and restart.", "Device Not Found");
+                return;
+            }
             else
             {
                 SetDevice(false);
