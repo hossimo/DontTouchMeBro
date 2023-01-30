@@ -12,6 +12,7 @@ namespace DontTouchMeBro
 
         static readonly Icon iconYes = Properties.Resources.YesIcon;
         static readonly Icon iconNo = Properties.Resources.NoIcon;
+        static readonly string instanceID = @"HID\ELAN2D25&COL01\5&2B77D6B&0&0000";
 
 
         [STAThread]
@@ -48,7 +49,7 @@ namespace DontTouchMeBro
                 p.StartInfo.Verb = "runas";
                 p.StartInfo.UseShellExecute = false;
                 p.StartInfo.CreateNoWindow = true;
-                p.StartInfo.Arguments = "/enum-devices /instanceid \"HID\\ELAN2D25&COL01\\5&2B77D6B&0&0000\"";
+                p.StartInfo.Arguments = $"/enum-devices /instanceid \"{instanceID}\"";
                 p.StartInfo.RedirectStandardOutput = true;
                 p.Start();
                 p.WaitForExit();
@@ -62,6 +63,12 @@ namespace DontTouchMeBro
 
         static void OnClick(object sender, EventArgs e)
         {
+            MouseEventArgs mouseArgs = (MouseEventArgs)e;
+            if(mouseArgs.Button == MouseButtons.Right)
+            {
+                return;
+            }
+
             ProcessStartInfo startInfo = new ProcessStartInfo(@"C:\Windows\System32\pnputil.exe")
             {
                 Verb = "runas",
@@ -72,12 +79,12 @@ namespace DontTouchMeBro
 
             if (trayIcon.Icon == iconYes)
             {
-                startInfo.Arguments = "/disable-device \"HID\\ELAN2D25&COL01\\5&2B77D6B&0&0000\"";
+                startInfo.Arguments = "/disable-device \"{instanceID}\"";
                 trayIcon.Icon = iconNo;
             }
             else
             {
-                startInfo.Arguments = "/enable-device \"HID\\ELAN2D25&COL01\\5&2B77D6B&0&0000\"";
+                startInfo.Arguments = "/enable-device \"{instanceID}\"";
                 trayIcon.Icon = iconYes;
             }
             Process.Start(startInfo);
