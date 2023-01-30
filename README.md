@@ -22,11 +22,7 @@ Well Maybe I'll flush it out to ask the user for a Device instance path and stor
 
 ## How do I make it work my Device or Touch Screen
 
-At this point you will need to edit the code entering your specific Device instance path. and recompile, but it's not too hard. in Program.cs near the top there is a instanceID:
-
-`static readonly string instanceID = @"HID\ELAN2D25&COL01\5&2B77D6B&0&0000";`
-
-You can change this variable to your instance ID.
+At this point you will need a text file in the same path as the executable called `device-id.txt` entering your specific Device instance path.
 
 
 ## How do I find my Device Instance Path?
