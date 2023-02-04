@@ -38,6 +38,7 @@ namespace DontTouchMeBro
                 Application.SetCompatibleTextRenderingDefault(false);
 
                 ContextMenu trayMenu = new ContextMenu();
+                trayMenu.MenuItems.Add("Reveal in File Explorer", OnShowSettings);
                 trayMenu.MenuItems.Add("Exit", OnExit);
 
                 trayIcon = new NotifyIcon
@@ -116,6 +117,19 @@ namespace DontTouchMeBro
         {
             trayIcon.Dispose();
             Application.Exit();
+        }
+
+        static void OnShowSettings(object sender, EventArgs e)
+        {
+            string strExeFilePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+            string strWorkPath = System.IO.Path.GetDirectoryName(strExeFilePath);
+
+            ProcessStartInfo start = new ProcessStartInfo
+            {
+                Arguments = strWorkPath,
+                FileName = "explorer.exe"
+            };
+            Process.Start(start);
         }
 
         static void SetDevice(bool enabled)
