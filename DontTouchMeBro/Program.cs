@@ -14,44 +14,43 @@ namespace DontTouchMeBro
         static readonly Icon iconYes = Properties.Resources.YesIcon;
         static readonly Icon iconNo = Properties.Resources.NoIcon;
         static string instanceID = "";
-        static string path;
+        static string path = Path.Combine(Directory.GetCurrentDirectory(), "device-id.txt");
 
+        private static Mutex mutex = null;
 
         [STAThread]
         static void Main()
         {
-            try
-            {
-                path = Path.Combine(Directory.GetCurrentDirectory(), "device-id.txt");
-                instanceID = File.ReadAllText(path);
-            }
-            catch (Exception)
-            {
-                MessageBox.Show($"Please meake a text file at\n{path}\n with the content of the Device you want to control.", "Missing config file");
-                return;
-            }
-            
-            Mutex mutex = new Mutex(false, "DontTouchMeBro!");
-            if (mutex.WaitOne(0, false))
-            {
-                Application.EnableVisualStyles();
-                Application.SetCompatibleTextRenderingDefault(false);
+            bool createdNew = false;
+            instanceID = ReadConfigFile(path);
 
-                ContextMenu trayMenu = new ContextMenu();
-                trayMenu.MenuItems.Add("Reveal in File Explorer", OnShowSettings);
-                trayMenu.MenuItems.Add("Exit", OnExit);
+            mutex = new Mutex(true, "DontTouchMeBro!", out createdNew);
 
-                trayIcon = new NotifyIcon
-                {
-                    Text = "Dont Touch Me Bro",
-                    ContextMenu = trayMenu,
-                    Visible = true
-                };
-
-                trayIcon.Click += OnClick;
-                OnStart();
-                Application.Run();
+            if (!createdNew)
+            {
+                Debug.WriteLine("Exitting, Already Running.");
             }
+
+            Application.EnableVisualStyles();
+            Application.SetCompatibleTextRenderingDefault(false);
+
+            ContextMenu trayMenu = new ContextMenu();
+            trayMenu.MenuItems.Add("Reveal in File Explorer", OnShowSettings);
+            trayMenu.MenuItems.Add("Configure", OnShowAbout);
+            trayMenu.MenuItems.Add("Exit", OnExit);
+
+            trayIcon = new NotifyIcon
+            {
+                Text = "Dont Touch Me Bro",
+                ContextMenu = trayMenu,
+                Visible = true
+            };
+
+            trayIcon.Click += OnClick;
+            OnStart();
+            Application.Run();
+            mutex.ReleaseMutex();
+
         }
         static void OnStart()
         {
@@ -96,7 +95,7 @@ namespace DontTouchMeBro
             {
                 Verb = "runas",
                 UseShellExecute = false,
-                CreateNoWindow = true
+                CreateNoWindow = true,
             };
 
 
@@ -131,6 +130,12 @@ namespace DontTouchMeBro
             };
             Process.Start(start);
         }
+        static void OnShowAbout(object sender, EventArgs e)
+        {
+            AboutWindow aboutWindow = new AboutWindow();
+            aboutWindow.SetDeviceID(instanceID);
+            aboutWindow.ShowDialog();
+        }
 
         static void SetDevice(bool enabled)
         {
@@ -144,6 +149,40 @@ namespace DontTouchMeBro
                 trayIcon.Icon = iconNo;
                 trayIcon.Text = "Device Disabled";
             }
+        }
+
+        static public void SetDeviceID(string deviceID)
+        {
+            instanceID= deviceID;
+            WriteConfigFile(path, deviceID.Trim());
+        }
+
+        static string ReadConfigFile(string path)
+        {
+            string result = null;
+           try
+            {
+                result = File.ReadAllText(path).Trim();
+            }
+            catch (Exception)
+            {
+                MessageBox.Show($"Please meake a text file at\n{path}\n with the content of the Device you want to control.", "Missing config file");
+            }
+
+            return result;
+        }
+        static void WriteConfigFile(string path, string deviceID)
+        {
+            try
+            {
+                File.WriteAllText(path, deviceID);
+            }
+            catch (Exception)
+            {
+                MessageBox.Show($"Could not write to {path}", "Could not write file");
+                throw;
+            }
+
         }
     }
 }
