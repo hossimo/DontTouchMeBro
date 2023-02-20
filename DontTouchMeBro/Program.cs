@@ -14,31 +14,36 @@ namespace DontTouchMeBro
         static readonly Icon iconYes = Properties.Resources.YesIcon;
         static readonly Icon iconNo = Properties.Resources.NoIcon;
         static string instanceID = "";
-        static string path = Path.Combine(Directory.GetCurrentDirectory(), "device-id.txt");
+        static readonly string path = Path.Combine(Directory.GetCurrentDirectory(), "device-id.txt");
 
         private static Mutex mutex = null;
 
         [STAThread]
         static void Main()
         {
-            bool createdNew = false;
-            instanceID = ReadConfigFile(path);
+            // using mutex make sure that only one instance of the application is running.
+            mutex = new Mutex(true, "DontTouchMeBro!", out bool createdNew);
 
-            mutex = new Mutex(true, "DontTouchMeBro!", out createdNew);
-
+            // check if the application is already running.
             if (!createdNew)
             {
                 Debug.WriteLine("Exitting, Already Running.");
+                return;
             }
 
+            instanceID = ReadConfigFile(path);
+
+            // Application Stuff
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
+            // Setup Menues
             ContextMenu trayMenu = new ContextMenu();
             trayMenu.MenuItems.Add("Reveal in File Explorer", OnShowSettings);
-            trayMenu.MenuItems.Add("Configure", OnShowAbout);
+            //trayMenu.MenuItems.Add("Configure", OnShowAbout); //TODO: Hiding the menu until it works
             trayMenu.MenuItems.Add("Exit", OnExit);
 
+            // Setup Tray Icon
             trayIcon = new NotifyIcon
             {
                 Text = "Dont Touch Me Bro",
@@ -46,70 +51,55 @@ namespace DontTouchMeBro
                 Visible = true
             };
 
+            // events
             trayIcon.Click += OnClick;
+
+            // Start the app
             OnStart();
+
             Application.Run();
             mutex.ReleaseMutex();
 
         }
         static void OnStart()
         {
-            string result;
-
-            using (Process p = new Process())
-            {
-                p.StartInfo.FileName = (@"C:\Windows\System32\pnputil.exe");
-                p.StartInfo.Verb = "runas";
-                p.StartInfo.UseShellExecute = false;
-                p.StartInfo.CreateNoWindow = true;
-                p.StartInfo.Arguments = $"/enum-devices /instanceid \"{instanceID}\"";
-                p.StartInfo.RedirectStandardOutput = true;
-                p.Start();
-                p.WaitForExit();
-                result = p.StandardOutput.ReadToEnd();
-            }
-            if (result.Contains("Started"))
+            DeviceManager.DeviceItem deviceItem =  DeviceManager.GetDeviceID(instanceID);
+            Debug.WriteLine($"DEVICE CODE: {deviceItem.ConfigManagerErrorCode}");
+            if (deviceItem.ConfigManagerErrorCode == "0")
             {
                 SetDevice(true);
             }
-            else if (result.Contains("No devices were found on the system."))
+            else if (deviceItem.ConfigManagerErrorCode == "22")
             {
-                MessageBox.Show($"Could not find a device with the name\n\n{instanceID}\n\nPlease check the instance name and restart.", "Device Not Found");
-                return;
+                SetDevice(false);
             }
             else
             {
-                SetDevice(false);
+                Debug.WriteLine($"Device Code not handled: {deviceItem.ConfigManagerErrorCode}");
             }
         }
 
         static void OnClick(object sender, EventArgs e)
         {
             MouseEventArgs mouseArgs = (MouseEventArgs)e;
+
+            // handle right click by ignoring it.
             if(mouseArgs.Button == MouseButtons.Right)
             {
                 return;
             }
 
-            ProcessStartInfo startInfo = new ProcessStartInfo(@"C:\Windows\System32\pnputil.exe")
-            {
-                Verb = "runas",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-
-
+            // toggle device based on icon state
             if (trayIcon.Icon == iconYes)
             {
-                startInfo.Arguments = $"/disable-device \"{instanceID}\"";
+                DeviceManager.DisableDevice(instanceID);
                 SetDevice(false);
             }
             else
             {
-                startInfo.Arguments = $"/enable-device \"{instanceID}\"";
+                DeviceManager.EnableDevice(instanceID);
                 SetDevice(true);
             }
-            Process.Start(startInfo);
         }
 
         static void OnExit(object sender, EventArgs e)
@@ -132,8 +122,8 @@ namespace DontTouchMeBro
         }
         static void OnShowAbout(object sender, EventArgs e)
         {
-            AboutWindow aboutWindow = new AboutWindow();
-            aboutWindow.SetDeviceID(instanceID);
+            AboutWindow aboutWindow = new AboutWindow(instanceID);
+            
             aboutWindow.ShowDialog();
         }
 
@@ -182,7 +172,6 @@ namespace DontTouchMeBro
                 MessageBox.Show($"Could not write to {path}", "Could not write file");
                 throw;
             }
-
         }
     }
 }
