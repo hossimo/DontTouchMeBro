@@ -47,7 +47,7 @@ namespace DontTouchMeBro
             this.DeviceID_textBox = new System.Windows.Forms.TextBox();
             this.DeviceId_Label = new System.Windows.Forms.Label();
             this.listView1 = new System.Windows.Forms.ListView();
-            this.checkBox1 = new System.Windows.Forms.CheckBox();
+            this.version_label = new System.Windows.Forms.Label();
             flowLayoutPanel2 = new System.Windows.Forms.FlowLayoutPanel();
             flowLayoutPanel2.SuspendLayout();
             this.SuspendLayout();
@@ -59,7 +59,7 @@ namespace DontTouchMeBro
             flowLayoutPanel2.AutoSizeMode = System.Windows.Forms.AutoSizeMode.GrowAndShrink;
             flowLayoutPanel2.Controls.Add(this.Cancel_button);
             flowLayoutPanel2.Controls.Add(this.OK_Button);
-            flowLayoutPanel2.Location = new System.Drawing.Point(279, 318);
+            flowLayoutPanel2.Location = new System.Drawing.Point(245, 408);
             flowLayoutPanel2.Margin = new System.Windows.Forms.Padding(2);
             flowLayoutPanel2.Name = "flowLayoutPanel2";
             flowLayoutPanel2.Size = new System.Drawing.Size(98, 27);
@@ -98,7 +98,7 @@ namespace DontTouchMeBro
             this.DeviceID_textBox.Margin = new System.Windows.Forms.Padding(2);
             this.DeviceID_textBox.Name = "DeviceID_textBox";
             this.DeviceID_textBox.ReadOnly = true;
-            this.DeviceID_textBox.Size = new System.Drawing.Size(579, 20);
+            this.DeviceID_textBox.Size = new System.Drawing.Size(510, 20);
             this.DeviceID_textBox.TabIndex = 0;
             // 
             // DeviceId_Label
@@ -120,23 +120,23 @@ namespace DontTouchMeBro
             this.listView1.CheckBoxes = true;
             this.listView1.GridLines = true;
             this.listView1.HideSelection = false;
-            this.listView1.Location = new System.Drawing.Point(12, 121);
+            this.listView1.Location = new System.Drawing.Point(12, 31);
             this.listView1.Name = "listView1";
-            this.listView1.Size = new System.Drawing.Size(629, 192);
+            this.listView1.Size = new System.Drawing.Size(560, 372);
             this.listView1.TabIndex = 7;
             this.listView1.UseCompatibleStateImageBehavior = false;
             this.listView1.View = System.Windows.Forms.View.Details;
             // 
-            // checkBox1
+            // version_label
             // 
-            this.checkBox1.AutoSize = true;
-            this.checkBox1.Location = new System.Drawing.Point(12, 31);
-            this.checkBox1.Name = "checkBox1";
-            this.checkBox1.Size = new System.Drawing.Size(97, 17);
-            this.checkBox1.TabIndex = 9;
-            this.checkBox1.Text = "Show HID only";
-            this.checkBox1.UseVisualStyleBackColor = true;
-            this.checkBox1.CheckedChanged += new System.EventHandler(this.checkBox1_CheckedChanged);
+            this.version_label.AutoSize = true;
+            this.version_label.Dock = System.Windows.Forms.DockStyle.Bottom;
+            this.version_label.Location = new System.Drawing.Point(0, 418);
+            this.version_label.Name = "version_label";
+            this.version_label.Padding = new System.Windows.Forms.Padding(0, 0, 0, 10);
+            this.version_label.Size = new System.Drawing.Size(70, 23);
+            this.version_label.TabIndex = 8;
+            this.version_label.Text = "Version_label";
             // 
             // AboutWindow
             // 
@@ -144,9 +144,9 @@ namespace DontTouchMeBro
             this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.CancelButton = this.Cancel_button;
-            this.ClientSize = new System.Drawing.Size(653, 351);
+            this.ClientSize = new System.Drawing.Size(584, 441);
             this.ControlBox = false;
-            this.Controls.Add(this.checkBox1);
+            this.Controls.Add(this.version_label);
             this.Controls.Add(this.DeviceId_Label);
             this.Controls.Add(this.listView1);
             this.Controls.Add(this.DeviceID_textBox);
@@ -156,7 +156,6 @@ namespace DontTouchMeBro
             this.MaximizeBox = false;
             this.MinimizeBox = false;
             this.Name = "AboutWindow";
-            this.ShowInTaskbar = false;
             this.Text = "Dont Touch Me Bro!";
             flowLayoutPanel2.ResumeLayout(false);
             flowLayoutPanel2.PerformLayout();
@@ -172,6 +171,6 @@ namespace DontTouchMeBro
         private Button Cancel_button;
         private Button OK_Button;
         private ListView listView1;
-        private CheckBox checkBox1;
+        private Label version_label;
     }
 }

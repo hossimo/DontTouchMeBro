@@ -13,7 +13,7 @@ namespace DontTouchMeBro
 
         static readonly Icon iconYes = Properties.Resources.YesIcon;
         static readonly Icon iconNo = Properties.Resources.NoIcon;
-        static string instanceID = "";
+        static DeviceManager.DeviceItem CurrentDevice;
         static readonly string path = Path.Combine(Directory.GetCurrentDirectory(), "device-id.txt");
 
         private static Mutex mutex = null;
@@ -31,8 +31,6 @@ namespace DontTouchMeBro
                 return;
             }
 
-            instanceID = ReadConfigFile(path);
-
             // Application Stuff
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
@@ -40,7 +38,7 @@ namespace DontTouchMeBro
             // Setup Menues
             ContextMenu trayMenu = new ContextMenu();
             trayMenu.MenuItems.Add("Reveal in File Explorer", OnShowSettings);
-            //trayMenu.MenuItems.Add("Configure", OnShowAbout); //TODO: Hiding the menu until it works
+            trayMenu.MenuItems.Add("Configure", OnShowAbout);
             trayMenu.MenuItems.Add("Exit", OnExit);
 
             // Setup Tray Icon
@@ -61,21 +59,25 @@ namespace DontTouchMeBro
             mutex.ReleaseMutex();
 
         }
+
+        // On Startup read the stored instanceID and check if the device is enabled or disabled.
+        // TODO: If the device is null of not found, show the about window.
         static void OnStart()
         {
-            DeviceManager.DeviceItem deviceItem =  DeviceManager.GetDeviceID(instanceID);
-            Debug.WriteLine($"DEVICE CODE: {deviceItem.ConfigManagerErrorCode}");
-            if (deviceItem.ConfigManagerErrorCode == "0")
+
+            CurrentDevice = DeviceManager.GetDeviceID(ReadConfigFile(path));
+            Debug.WriteLine($"DEVICE CODE: {CurrentDevice.ConfigManagerErrorCode}");
+            if (CurrentDevice.ConfigManagerErrorCode == "0")
             {
-                SetDevice(true);
+                SetDeviceIcon(true);
             }
-            else if (deviceItem.ConfigManagerErrorCode == "22")
+            else if (CurrentDevice.ConfigManagerErrorCode == "22")
             {
-                SetDevice(false);
+                SetDeviceIcon(false);
             }
             else
             {
-                Debug.WriteLine($"Device Code not handled: {deviceItem.ConfigManagerErrorCode}");
+                Debug.WriteLine($"Device Code not handled: {CurrentDevice.ConfigManagerErrorCode}");
             }
         }
 
@@ -84,7 +86,7 @@ namespace DontTouchMeBro
             MouseEventArgs mouseArgs = (MouseEventArgs)e;
 
             // handle right click by ignoring it.
-            if(mouseArgs.Button == MouseButtons.Right)
+            if (mouseArgs.Button == MouseButtons.Right)
             {
                 return;
             }
@@ -92,13 +94,13 @@ namespace DontTouchMeBro
             // toggle device based on icon state
             if (trayIcon.Icon == iconYes)
             {
-                DeviceManager.DisableDevice(instanceID);
-                SetDevice(false);
+                DeviceManager.DisableDevice(CurrentDevice.id);
+                SetDeviceIcon(false);
             }
             else
             {
-                DeviceManager.EnableDevice(instanceID);
-                SetDevice(true);
+                DeviceManager.EnableDevice(CurrentDevice.id);
+                SetDeviceIcon(true);
             }
         }
 
@@ -122,37 +124,50 @@ namespace DontTouchMeBro
         }
         static void OnShowAbout(object sender, EventArgs e)
         {
-            AboutWindow aboutWindow = new AboutWindow(instanceID);
-            
+            AboutWindow aboutWindow = new AboutWindow();
+
             aboutWindow.ShowDialog();
         }
 
-        static void SetDevice(bool enabled)
+        static void SetDeviceIcon(bool enabled)
         {
             if (enabled)
             {
                 trayIcon.Icon = iconYes;
-                trayIcon.Text = "Device Enabled";
+                trayIcon.Text = $"{CurrentDevice.description} Enabled";
             }
             else
             {
                 trayIcon.Icon = iconNo;
-                trayIcon.Text = "Device Disabled";
+                trayIcon.Text = $"{CurrentDevice.description} Disabled";
             }
         }
 
         static public void SetDeviceID(string deviceID)
         {
-            instanceID= deviceID;
-            WriteConfigFile(path, deviceID.Trim());
+            CurrentDevice = DeviceManager.GetDeviceID(deviceID);
+            WriteConfigFile(path, deviceID);
+            SetDeviceIcon(DeviceManager.IsDeviceEnabled(deviceID));
+            Debug.WriteLine($"Wrote Device ID: {deviceID} to config {path}.");
+        }
+
+        static public string GetDeviceID()
+        {
+            return CurrentDevice.id;
+        }
+
+        static public DeviceManager.DeviceItem GetCurrentDevice()
+        {
+            return CurrentDevice;
         }
 
         static string ReadConfigFile(string path)
         {
             string result = null;
-           try
+            try
             {
                 result = File.ReadAllText(path).Trim();
+                Debug.WriteLine($"Read Device ID: {result} from config {path}.");
             }
             catch (Exception)
             {
