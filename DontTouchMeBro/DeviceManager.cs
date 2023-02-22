@@ -2,28 +2,29 @@
 using System.Linq;
 using System.Management;
 
-// https://learn.microsoft.com/en-us/windows-hardware/drivers/install/device-manager-error-messages
-//
-// ConfigManagerErrorCode
-//
-//0: This value indicates that the device is working properly.
-//1: This value indicates that the device is not configured correctly.
-//2: This value indicates that the driver for the device is not installed.
-//3: This value indicates that the driver for the device is not configured correctly.
-//10: This value indicates that the device cannot start.
-//12: This value indicates that the device has been disabled.
-//14: This value indicates that the device has failed.
-//16: This value indicates that the device is in a "not present" state.
-//18: This value indicates that the device is not currently available.
-//19: This value indicates that the device has no drivers installed.
-//21: This value indicates that the device is not working properly due to a reconfiguration.
-//22: This value indicates that the device is disabled.
-//24: This value indicates that the device is not present, not working, or missing drivers.
 
 namespace DontTouchMeBro
 {
     internal class DeviceManager
     {
+        // https://learn.microsoft.com/en-us/windows-hardware/drivers/install/device-manager-error-messages
+        public struct ConfigManagerErrorCode
+        {
+            public const string OK = "0";
+            public const string NOT_CONFIGURED = "1";
+            public const string DRIVER_NOT_INSTALLED = "2";
+            public const string DRIVER_NOT_CONFIGURED = "3";
+            public const string DEVICE_CANNOT_START = "10";
+            public const string DEVICE_DISABLED = "12";
+            public const string DEVICE_FAILED = "14";
+            public const string DEVICE_NOT_PRESENT = "16";
+            public const string DEVICE_NOT_AVAILABLE = "18";
+            public const string DEVICE_NO_DRIVERS = "19";
+            public const string DEVICE_RECONFIGURED = "21";
+            public const string DEVICE_DISABLED2 = "22";
+            public const string DEVICE_NOT_PRESENT2 = "24";
+        }
+
         public struct DeviceItem
         {
             public string id;
@@ -118,7 +119,7 @@ namespace DontTouchMeBro
             {
                 if (item["DeviceID"].ToString() == deviceID)
                 {
-                    return item["ConfigManagerErrorCode"].ToString() == "0";
+                    return item["ConfigManagerErrorCode"].ToString() == DeviceManager.ConfigManagerErrorCode.OK;
                 }
             }
             return false;

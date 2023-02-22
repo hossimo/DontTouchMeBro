@@ -57,7 +57,6 @@ namespace DontTouchMeBro
 
             Application.Run();
             mutex.ReleaseMutex();
-
         }
 
         // On Startup read the stored instanceID and check if the device is enabled or disabled.
