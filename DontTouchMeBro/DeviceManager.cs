@@ -5,7 +5,7 @@ using System.Management;
 
 namespace DontTouchMeBro
 {
-    internal class DeviceManager
+    public class DeviceManager
     {
         // https://learn.microsoft.com/en-us/windows-hardware/drivers/install/device-manager-error-messages
         public struct ConfigManagerErrorCode
@@ -82,30 +82,32 @@ namespace DontTouchMeBro
         }
 
         // Disable Device
-        public static void DisableDevice(string deviceID)
+        public static void DisableDevice(DeviceItem deviceID)
         {
             ManagementObjectSearcher deviceSearcher = GetManagementObjectSearcher();
 
             foreach (ManagementObject item in deviceSearcher.Get().Cast<ManagementObject>())
             {
-                if (item["DeviceID"].ToString() == deviceID)
+                if (item["DeviceID"].ToString() == deviceID.id)
                 {
                     item.InvokeMethod("Disable", null, null);
+                    Program.CurrentDevice = GetDeviceID(deviceID.id);
                     break;
                 }
             }
         }
 
         //Enable Device by deviceID
-        public static void EnableDevice(string deviceID)
+        public static void EnableDevice(DeviceItem deviceID)
         {
             ManagementObjectSearcher deviceSearcher = GetManagementObjectSearcher();
 
             foreach (ManagementObject item in deviceSearcher.Get().Cast<ManagementObject>())
             {
-                if (item["DeviceID"].ToString() == deviceID)
+                if (item["DeviceID"].ToString() == deviceID.id)
                 {
                     item.InvokeMethod("Enable", null, null);
+                    Program.CurrentDevice = GetDeviceID(deviceID.id);
                     break;
                 }
             }
