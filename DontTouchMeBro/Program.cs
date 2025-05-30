@@ -17,6 +17,10 @@ namespace DontTouchMeBro
         [STAThread]
         static void Main()
         {
+            // Set up global exception handlers
+            Application.ThreadException += new ThreadExceptionEventHandler(Application_ThreadException);
+            AppDomain.CurrentDomain.UnhandledException += new UnhandledExceptionEventHandler(CurrentDomain_UnhandledException);
+            
             // using mutex make sure that only one instance of the application is running.
             mutex = new Mutex(true, "DontTouchMeBro!", out bool createdNew);
 
@@ -122,6 +126,7 @@ namespace DontTouchMeBro
 
             return result;
         }
+        
         static void WriteConfigFile(string path, string deviceID)
         {
             try
@@ -132,6 +137,47 @@ namespace DontTouchMeBro
             {
                 MessageBox.Show($"Could not write to {path}", "Could not write file");
                 throw;
+            }
+        }
+        
+        private static void Application_ThreadException(object sender, ThreadExceptionEventArgs e)
+        {
+            try
+            {
+                Debug.WriteLine($"Thread Exception: {e.Exception.Message}");
+                // Try to ensure the notify icon is visible
+                if (mainForm != null)
+                {
+                    mainForm.RestoreNotifyIcon();
+                }
+            }
+            catch (Exception ex)
+            {
+                // Last resort if even our error handler fails
+                Debug.WriteLine($"Critical error in exception handler: {ex.Message}");
+            }
+        }
+
+        private static void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            try
+            {
+                Exception ex = e.ExceptionObject as Exception;
+                string errorMessage = ex?.ToString() ?? "Unknown error";
+                Debug.WriteLine($"Unhandled Exception: {errorMessage}");
+                
+                // If this is a terminal exception, we can't recover
+                if (e.IsTerminating)
+                {
+                    File.WriteAllText(
+                        Path.Combine(Directory.GetCurrentDirectory(), "fatal_error.log"),
+                        $"Fatal error occurred at {DateTime.Now}: {errorMessage}"
+                    );
+                }
+            }
+            catch
+            {
+                // Nothing we can do here but try not to make things worse
             }
         }
     }

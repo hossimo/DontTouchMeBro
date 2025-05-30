@@ -114,6 +114,9 @@
     <Compile Include="AboutWindow.Designer.cs">
       <DependentUpon>AboutWindow.cs</DependentUpon>
     </Compile>
+    <Compile Include="C:/Users/hoss/Documents/GitHub/DontTouchMeBro/DontTouchMeBro/\ErrorLogger.cs">
+      <Link>ErrorLogger.cs</Link>
+    </Compile>
     <Compile Include="DeviceManager.cs" />
     <Compile Include="MainForm.cs">
       <SubType>Form</SubType>
