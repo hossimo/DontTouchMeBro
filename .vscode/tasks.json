@@ -1,0 +1,30 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "build",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "build",
+                "${workspaceFolder}/DontTouchMeBro/DontTouchMeBro.csproj",
+                "/property:GenerateFullPaths=true",
+                "/consoleloggerparameters:NoSummary"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "run-elevated",
+            "type": "shell",
+            "command": "Start-Process",
+            "args": [
+                "-FilePath",
+                "'${workspaceFolder}\\DontTouchMeBro\\bin\\Debug\\net10.0-windows\\DontTouchMeBro.exe'",
+                "-Verb",
+                "RunAs"
+            ],
+            "dependsOn": "build",
+            "problemMatcher": []
+        }
+    ]
+}

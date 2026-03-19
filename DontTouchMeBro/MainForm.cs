@@ -19,16 +19,16 @@ namespace DontTouchMeBro
 
         public MainForm()
         {
-            ContextMenu trayMenu = new ContextMenu();
+            ContextMenuStrip trayMenu = new ContextMenuStrip();
             // I don't like how this depends on Program, really need to setup a better messaging model
-            trayMenu.MenuItems.Add("Reveal in File Explorer", Program.OnShowSettings);
-            trayMenu.MenuItems.Add("Configure", Program.OnShowAbout);
-            trayMenu.MenuItems.Add("Exit", Program.OnExit);
+            trayMenu.Items.Add("Reveal in File Explorer", null, Program.OnShowSettings);
+            trayMenu.Items.Add("Configure", null, Program.OnShowAbout);
+            trayMenu.Items.Add("Exit", null, Program.OnExit);
 
             _notifyIcon = new NotifyIcon
             {
                 Text = "Dont Touch Me Bro",
-                ContextMenu = trayMenu,
+                ContextMenuStrip = trayMenu,
                 Visible = true
             };
 
@@ -191,15 +191,15 @@ namespace DontTouchMeBro
                     _notifyIcon.Dispose();
                 }
                 
-                ContextMenu trayMenu = new ContextMenu();
-                trayMenu.MenuItems.Add("Reveal in File Explorer", Program.OnShowSettings);
-                trayMenu.MenuItems.Add("Configure", Program.OnShowAbout);
-                trayMenu.MenuItems.Add("Exit", Program.OnExit);
+                ContextMenuStrip trayMenu = new ContextMenuStrip();
+                trayMenu.Items.Add("Reveal in File Explorer", null, Program.OnShowSettings);
+                trayMenu.Items.Add("Configure", null, Program.OnShowAbout);
+                trayMenu.Items.Add("Exit", null, Program.OnExit);
 
                 _notifyIcon = new NotifyIcon
                 {
                     Text = "Dont Touch Me Bro",
-                    ContextMenu = trayMenu,
+                    ContextMenuStrip = trayMenu,
                     Visible = true
                 };
 

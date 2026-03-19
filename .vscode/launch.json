@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Debug DontTouchMeBro",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "${workspaceFolder}/DontTouchMeBro/bin/Debug/net10.0-windows/DontTouchMeBro.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}/DontTouchMeBro/bin/Debug/net10.0-windows",
+            "stopAtEntry": false,
+            "console": "internalConsole",
+            "preLaunchTask": "build"
+        }
+    ]
+}
