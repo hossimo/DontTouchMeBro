@@ -41,22 +41,33 @@ namespace DontTouchMeBro
             return new ManagementObjectSearcher(SCOPE, QUERY);
         }
 
+        // Build a DeviceItem from a WMI management object.
+        private static DeviceItem ToDeviceItem(ManagementObject item)
+        {
+            return new DeviceItem
+            {
+                id = item["DeviceID"]?.ToString(),
+                description = item["Description"]?.ToString(),
+                manufacturer = item["Manufacturer"]?.ToString(),
+                ConfigManagerErrorCode = item["ConfigManagerErrorCode"]?.ToString()
+            };
+        }
+
         // Get All Devices
         public static List<DeviceItem> GetDeviceItems()
         {
             List<DeviceItem> devices = new List<DeviceItem>();
-            ManagementObjectSearcher deviceSearcher = GetManagementObjectSearcher();
 
-            foreach (ManagementObject item in deviceSearcher.Get().Cast<ManagementObject>())
+            using (ManagementObjectSearcher deviceSearcher = GetManagementObjectSearcher())
+            using (ManagementObjectCollection results = deviceSearcher.Get())
             {
-                DeviceItem device = new DeviceItem
+                foreach (ManagementObject item in results.Cast<ManagementObject>())
                 {
-                    id = item["DeviceID"].ToString(),
-                    description = item["Description"].ToString(),
-                    manufacturer = item["Manufacturer"].ToString(),
-                    ConfigManagerErrorCode = item["ConfigManagerErrorCode"].ToString()
-                };
-                devices.Add(device);
+                    using (item)
+                    {
+                        devices.Add(ToDeviceItem(item));
+                    }
+                }
             }
             return devices;
         }
@@ -65,17 +76,20 @@ namespace DontTouchMeBro
         public static DeviceItem GetDeviceID(string deviceID)
         {
             DeviceItem deviceItem = new DeviceItem();
-            ManagementObjectSearcher deviceSearcher = GetManagementObjectSearcher();
 
-            foreach (ManagementObject item in deviceSearcher.Get().Cast<ManagementObject>())
+            using (ManagementObjectSearcher deviceSearcher = GetManagementObjectSearcher())
+            using (ManagementObjectCollection results = deviceSearcher.Get())
             {
-                if (item["DeviceID"].ToString() == deviceID)
+                foreach (ManagementObject item in results.Cast<ManagementObject>())
                 {
-                    deviceItem.id = item["DeviceID"].ToString();
-                    deviceItem.description = item["Description"].ToString();
-                    deviceItem.manufacturer = item["Manufacturer"].ToString();
-                    deviceItem.ConfigManagerErrorCode = item["ConfigManagerErrorCode"].ToString();
-                    break;
+                    using (item)
+                    {
+                        if (item["DeviceID"]?.ToString() == deviceID)
+                        {
+                            deviceItem = ToDeviceItem(item);
+                            break;
+                        }
+                    }
                 }
             }
             return deviceItem;
@@ -84,44 +98,51 @@ namespace DontTouchMeBro
         // Disable Device
         public static void DisableDevice(DeviceItem deviceID)
         {
-            ManagementObjectSearcher deviceSearcher = GetManagementObjectSearcher();
-
-            foreach (ManagementObject item in deviceSearcher.Get().Cast<ManagementObject>())
-            {
-                if (item["DeviceID"].ToString() == deviceID.id)
-                {
-                    item.InvokeMethod("Disable", null, null);
-                    Program.CurrentDevice = GetDeviceID(deviceID.id);
-                    break;
-                }
-            }
+            InvokeDeviceMethod(deviceID.id, "Disable");
         }
 
         //Enable Device by deviceID
         public static void EnableDevice(DeviceItem deviceID)
         {
-            ManagementObjectSearcher deviceSearcher = GetManagementObjectSearcher();
+            InvokeDeviceMethod(deviceID.id, "Enable");
+        }
 
-            foreach (ManagementObject item in deviceSearcher.Get().Cast<ManagementObject>())
+        // Invoke a WMI method ("Enable"/"Disable") on the device with the given id
+        // and refresh Program.CurrentDevice from the same object.
+        private static void InvokeDeviceMethod(string deviceID, string methodName)
+        {
+            using (ManagementObjectSearcher deviceSearcher = GetManagementObjectSearcher())
+            using (ManagementObjectCollection results = deviceSearcher.Get())
             {
-                if (item["DeviceID"].ToString() == deviceID.id)
+                foreach (ManagementObject item in results.Cast<ManagementObject>())
                 {
-                    item.InvokeMethod("Enable", null, null);
-                    Program.CurrentDevice = GetDeviceID(deviceID.id);
-                    break;
+                    using (item)
+                    {
+                        if (item["DeviceID"]?.ToString() == deviceID)
+                        {
+                            item.InvokeMethod(methodName, null, null);
+                            Program.CurrentDevice = GetDeviceID(deviceID);
+                            break;
+                        }
+                    }
                 }
             }
         }
 
         public static bool IsDeviceEnabled(string deviceID)
         {
-            ManagementObjectSearcher deviceSearcher = GetManagementObjectSearcher();
-
-            foreach (ManagementObject item in deviceSearcher.Get().Cast<ManagementObject>())
+            using (ManagementObjectSearcher deviceSearcher = GetManagementObjectSearcher())
+            using (ManagementObjectCollection results = deviceSearcher.Get())
             {
-                if (item["DeviceID"].ToString() == deviceID)
+                foreach (ManagementObject item in results.Cast<ManagementObject>())
                 {
-                    return item["ConfigManagerErrorCode"].ToString() == DeviceManager.ConfigManagerErrorCode.OK;
+                    using (item)
+                    {
+                        if (item["DeviceID"]?.ToString() == deviceID)
+                        {
+                            return item["ConfigManagerErrorCode"]?.ToString() == DeviceManager.ConfigManagerErrorCode.OK;
+                        }
+                    }
                 }
             }
             return false;

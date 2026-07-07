@@ -41,19 +41,9 @@ namespace DontTouchMeBro
 
 
             Debug.WriteLine($"DEVICE CODE: {CurrentDevice.ConfigManagerErrorCode}");
-            if (CurrentDevice.ConfigManagerErrorCode == "0")
-            {
-                mainForm.SetDeviceIcon(CurrentDevice);
-            }
-            else if (CurrentDevice.ConfigManagerErrorCode == "22")
-            {
-                mainForm.SetDeviceIcon(CurrentDevice);
-            }
-            else
-            {
-                mainForm.SetDeviceIcon(CurrentDevice);
-                Debug.WriteLine($"Device Code not handled: {CurrentDevice.ConfigManagerErrorCode}");
-            }
+            // SetDeviceIcon already maps every ConfigManagerErrorCode (including
+            // unknown ones) to the right icon, so a single call is enough.
+            mainForm.SetDeviceIcon(CurrentDevice);
 
             Application.Run(mainForm);
             mutex.ReleaseMutex();
