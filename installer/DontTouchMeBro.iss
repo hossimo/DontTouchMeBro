@@ -15,7 +15,7 @@
 #define AppExeName "DontTouchMeBro.exe"
 #define AppSource "..\dist\win-x64\DontTouchMeBro.exe"
 ; Pull the version straight from the built exe so it never drifts.
-#define AppVersion GetFileVersion(AppSource)
+#define AppVersion GetVersionNumbersString(AppSource)
 
 [Setup]
 ; A stable AppId keeps upgrades/uninstall tracking consistent across versions.
