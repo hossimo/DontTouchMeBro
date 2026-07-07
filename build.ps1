@@ -46,13 +46,16 @@ param(
     [bool]  $SelfContained = $true,
     [bool]  $SingleFile    = $true,
     [string]$Version       = '',
-    [string]$Output        = ''
+    [string]$Output        = '',
+    [string]$CertThumbprint = '',
+    [string]$TimestampUrl   = 'http://timestamp.digicert.com'
 )
 
 $ErrorActionPreference = 'Stop'
 
 $repoRoot = $PSScriptRoot
 $project  = Join-Path $repoRoot 'DontTouchMeBro\DontTouchMeBro.csproj'
+$signFile = Join-Path $repoRoot 'tools\Sign-File.ps1'
 
 if (-not $Output) {
     $Output = Join-Path $repoRoot "dist\$Runtime"
@@ -102,11 +105,17 @@ if (Test-Path $strayConfig) {
 }
 
 $exe = Join-Path $Output 'DontTouchMeBro.exe'
-if (Test-Path $exe) {
-    $sizeMb = [math]::Round((Get-Item $exe).Length / 1MB, 1)
-    Write-Host ""
-    Write-Host "==> Build succeeded" -ForegroundColor Green
-    Write-Host "    Executable : $exe ($sizeMb MB)"
-} else {
+if (-not (Test-Path $exe)) {
     throw "Publish completed but $exe was not found."
 }
+
+# Optionally Authenticode-sign the published exe.
+if ($CertThumbprint) {
+    Write-Host "    Signing executable..."
+    & $signFile -Path $exe -Thumbprint $CertThumbprint -TimestampUrl $TimestampUrl
+}
+
+$sizeMb = [math]::Round((Get-Item $exe).Length / 1MB, 1)
+Write-Host ""
+Write-Host "==> Build succeeded" -ForegroundColor Green
+Write-Host "    Executable : $exe ($sizeMb MB)"

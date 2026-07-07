@@ -42,7 +42,9 @@ param(
     [string]$Configuration = 'Release',
     [string]$Version       = '',
     [switch]$SkipBuild,
-    [string]$Iscc          = ''
+    [string]$Iscc          = '',
+    [string]$CertThumbprint = '',
+    [string]$TimestampUrl   = 'http://timestamp.digicert.com'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,6 +52,7 @@ $ErrorActionPreference = 'Stop'
 $repoRoot  = $PSScriptRoot
 $buildPs1  = Join-Path $repoRoot 'build.ps1'
 $issScript = Join-Path $repoRoot 'installer\DontTouchMeBro.iss'
+$signFile  = Join-Path $repoRoot 'tools\Sign-File.ps1'
 
 # --- Locate ISCC.exe -------------------------------------------------------
 function Find-Iscc {
@@ -77,10 +80,14 @@ function Find-Iscc {
 $isccPath = Find-Iscc -Override $Iscc
 Write-Host "==> Using ISCC: $isccPath" -ForegroundColor Cyan
 
-# --- Publish ---------------------------------------------------------------
+# --- Publish (signs the exe too when -CertThumbprint is given) --------------
 if (-not $SkipBuild) {
     $buildArgs = @{ Configuration = $Configuration }
     if ($Version) { $buildArgs['Version'] = $Version }
+    if ($CertThumbprint) {
+        $buildArgs['CertThumbprint'] = $CertThumbprint
+        $buildArgs['TimestampUrl']   = $TimestampUrl
+    }
     & $buildPs1 @buildArgs
     if ($LASTEXITCODE -ne 0) { throw "build.ps1 failed with exit code $LASTEXITCODE" }
 } else {
@@ -97,11 +104,17 @@ $outputDir = Join-Path $repoRoot 'installer\Output'
 $setup = Get-ChildItem -Path $outputDir -Filter 'DontTouchMeBro-Setup-*.exe' -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
 
-if ($setup) {
-    $sizeMb = [math]::Round($setup.Length / 1MB, 1)
-    Write-Host ""
-    Write-Host "==> Installer ready" -ForegroundColor Green
-    Write-Host "    $($setup.FullName) ($sizeMb MB)"
-} else {
+if (-not $setup) {
     throw "ISCC reported success but no setup exe was found in $outputDir."
 }
+
+# Sign the installer itself so the setup exe isn't flagged when distributed.
+if ($CertThumbprint) {
+    Write-Host "==> Signing installer..." -ForegroundColor Cyan
+    & $signFile -Path $setup.FullName -Thumbprint $CertThumbprint -TimestampUrl $TimestampUrl
+}
+
+$sizeMb = [math]::Round($setup.Length / 1MB, 1)
+Write-Host ""
+Write-Host "==> Installer ready" -ForegroundColor Green
+Write-Host "    $($setup.FullName) ($sizeMb MB)"

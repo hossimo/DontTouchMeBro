@@ -58,6 +58,27 @@ why app-directory lookups must use `AppContext.BaseDirectory`, not
   `installer\Output\` (gitignored). The app version is read from the exe
   (`GetVersionNumbersString`) so it tracks `AssemblyInfo.cs`.
 
+### Code signing
+
+- `build.ps1` and `make-installer.ps1` take `-CertThumbprint` (and optional
+  `-TimestampUrl`); when given, the published exe and the setup are
+  Authenticode-signed via `tools/Sign-File.ps1` (SHA-256 + RFC-3161 timestamp).
+- `tools/New-CodeSigningCert.ps1` creates a self-signed dev cert and (with
+  `-Trust`, elevated) installs it into the machine Trusted Root / Trusted
+  Publisher stores. Typical flow:
+  ```powershell
+  # once, elevated:
+  .\tools\New-CodeSigningCert.ps1 -Trust        # prints a thumbprint
+  # then, per build:
+  .\make-installer.ps1 -CertThumbprint <thumbprint>
+  ```
+- **Caveat:** a self-signed cert makes signatures *valid on this machine* but
+  carries no SmartScreen/Smart App Control reputation — **SAC may still block
+  the binary**. This dev machine has SAC enforced
+  (`HKLM\...\CI\Policy\VerifiedAndReputablePolicyState = 1`), which blocks
+  unsigned/low-reputation exes with "code 4551". Real distribution needs an
+  OV/EV certificate from a public CA.
+
 ## Architecture / where things live
 
 | File | Responsibility |
