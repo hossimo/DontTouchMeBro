@@ -354,3 +354,6 @@ device-id.txt
 
 # Publish output from build.ps1
 dist/
+
+# Inno Setup compiled installers
+installer/Output/

@@ -38,12 +38,21 @@ why app-directory lookups must use `AppContext.BaseDirectory`, not
 
 - Toolchain confirmed working: .NET SDK 10.0.x.
 - There are **no tests** in this repo.
-- The app expects a `device-id.txt` file next to the executable containing the
-  target Device Instance Path (e.g. `HID\ELAN2D25&COL01\5&2B77D6B&0&0000`). The
-  project copies `DontTouchMeBro/device-id.txt` to the output directory on build.
-- Config can also be set at runtime via the tray menu **Configure** dialog
-  (`AboutWindow`), which lists HID devices and writes the chosen ID back to
-  `device-id.txt`.
+- Config lives at `%APPDATA%\DontTouchMeBro\device-id.txt` and holds the target
+  Device Instance Path (e.g. `HID\ELAN2D25&COL01\5&2B77D6B&0&0000`). It is
+  created at runtime — either by editing the file directly or via the tray menu
+  **Configure** dialog (`AboutWindow`), which lists HID devices and writes the
+  chosen ID back. `Program.MigrateLegacyConfig` copies a pre-existing
+  `device-id.txt` from next to the exe (older layout) on first run.
+
+## Packaging
+
+- `installer/DontTouchMeBro.iss` is an Inno Setup script producing a **per-user**
+  installer (`PrivilegesRequired=lowest`, installs to `{autopf}` →
+  `%LocalAppData%\Programs`) with a Start Menu shortcut. It packages the
+  single-file exe from `dist\win-x64`, so run `build.ps1` first. Compiled
+  installers land in `installer\Output\` (gitignored). The app version is read
+  from the exe (`GetFileVersion`) so it tracks `AssemblyInfo.cs`.
 
 ## Architecture / where things live
 
@@ -77,9 +86,9 @@ why app-directory lookups must use `AppContext.BaseDirectory`, not
   suppressed in the `.csproj` on purpose.
 - `Nullable` and `ImplicitUsings` are **disabled** — match the existing explicit
   `using` style and don't assume nullable reference types.
-- Build artifacts (`bin/`, `obj/`) are gitignored. **`device-id.txt` is checked
-  in** and currently holds a real device path — see the review notes before
-  changing how config is stored.
+- Build artifacts (`bin/`, `obj/`), `dist/`, and `installer/Output/` are
+  gitignored. `device-id.txt` is **not** tracked (it's per-user config now living
+  in `%APPDATA%`); `device-id.txt.example` documents the format.
 - The tray menu wires directly to `static` handlers on `Program`
   (`OnShowSettings`, `OnShowAbout`, `OnExit`). New menu items follow the same
   pattern today.
