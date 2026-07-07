@@ -51,6 +51,8 @@ Source: "{#AppSource}"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: startmenuicon
 
 [Run]
-; Offer to launch after install. The app requires admin, so this shows a UAC
-; prompt (runascurrentuser keeps it tied to the installing user's session).
-Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent runascurrentuser
+; Offer to launch after install. The app's manifest is requireAdministrator, so
+; it must be started via the shell (shellexec) - that lets Windows honor the
+; manifest and show the UAC elevation prompt. Launching directly (e.g. with
+; runascurrentuser) would try to start it non-elevated and fail.
+Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: postinstall skipifsilent shellexec
