@@ -9,7 +9,15 @@ namespace DontTouchMeBro
     internal static class Program
     {
         static public DeviceManager.DeviceItem CurrentDevice;
-        static readonly string path = Path.Combine(Directory.GetCurrentDirectory(), "device-id.txt");
+
+        // Config lives in %APPDATA%\DontTouchMeBro so it survives an install and
+        // is found regardless of the process working directory (e.g. when
+        // launched from a Start Menu shortcut).
+        static readonly string ConfigDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "DontTouchMeBro");
+        static readonly string path = Path.Combine(ConfigDirectory, "device-id.txt");
+
         static MainForm mainForm;
 
         private static Mutex mutex = null;
@@ -37,6 +45,7 @@ namespace DontTouchMeBro
 
 
             mainForm = new MainForm();
+            MigrateLegacyConfig();
             CurrentDevice = DeviceManager.GetDeviceID(ReadConfigFile(path));
 
 
@@ -61,16 +70,41 @@ namespace DontTouchMeBro
         //OnShowSettings
         public static void OnShowSettings(object sender, EventArgs e)
         {
-            // AppContext.BaseDirectory works in single-file publishes, where
-            // Assembly.Location returns an empty string.
-            string strWorkPath = AppContext.BaseDirectory;
+            // Open the config directory where device-id.txt lives.
+            Directory.CreateDirectory(ConfigDirectory);
 
             ProcessStartInfo start = new ProcessStartInfo
             {
-                Arguments = strWorkPath,
+                Arguments = ConfigDirectory,
                 FileName = "explorer.exe"
             };
             Process.Start(start);
+        }
+
+        // One-time migration: earlier versions stored device-id.txt next to the
+        // executable. If the new per-user config doesn't exist yet but a legacy
+        // file does, copy it over so upgrades keep working.
+        static void MigrateLegacyConfig()
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    return;
+                }
+
+                string legacyPath = Path.Combine(AppContext.BaseDirectory, "device-id.txt");
+                if (File.Exists(legacyPath))
+                {
+                    Directory.CreateDirectory(ConfigDirectory);
+                    File.Copy(legacyPath, path);
+                    Debug.WriteLine($"Migrated legacy config from {legacyPath} to {path}.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Config migration failed: {ex.Message}");
+            }
         }
 
         //OnShowAbout
@@ -112,16 +146,17 @@ namespace DontTouchMeBro
             }
             catch (Exception)
             {
-                MessageBox.Show($"Please meake a text file at\n{path}\n with the content of the Device you want to control.", "Missing config file");
+                MessageBox.Show($"No device is configured yet.\n\nUse the tray icon's \"Configure\" option to pick a device, or create a text file at\n{path}\ncontaining the Device Instance Path you want to control.", "No device configured");
             }
 
             return result;
         }
-        
+
         static void WriteConfigFile(string path, string deviceID)
         {
             try
             {
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
                 File.WriteAllText(path, deviceID);
             }
             catch (Exception)
@@ -160,8 +195,11 @@ namespace DontTouchMeBro
                 // If this is a terminal exception, we can't recover
                 if (e.IsTerminating)
                 {
+                    // Write to the config dir, which is guaranteed writable
+                    // (the working directory may not be).
+                    Directory.CreateDirectory(ConfigDirectory);
                     File.WriteAllText(
-                        Path.Combine(Directory.GetCurrentDirectory(), "fatal_error.log"),
+                        Path.Combine(ConfigDirectory, "fatal_error.log"),
                         $"Fatal error occurred at {DateTime.Now}: {errorMessage}"
                     );
                 }

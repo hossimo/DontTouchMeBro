@@ -67,7 +67,12 @@ Write-Host "    Output        : $Output"
 
 # Start from a clean output directory so stale files never linger.
 if (Test-Path $Output) {
-    Remove-Item -Recurse -Force $Output
+    try {
+        Remove-Item -Recurse -Force $Output -ErrorAction Stop
+    } catch {
+        throw "Could not clean '$Output' - is DontTouchMeBro.exe still running? " +
+              "Close the app (it lives in the tray) and try again.`n$($_.Exception.Message)"
+    }
 }
 
 $publishArgs = @(

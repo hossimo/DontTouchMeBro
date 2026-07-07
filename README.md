@@ -20,9 +20,34 @@ Job done...
 
 Well Maybe I'll flush it out to ask the user for a Device instance path and store it in a file or registry, but to be honest it works for me at this point so that might take a while.
 
+## Installing
+
+Build the installer in one step with [Inno Setup](https://jrsoftware.org/isinfo.php)
+installed:
+
+```powershell
+./make-installer.ps1
+```
+
+This publishes a self-contained exe (no .NET runtime needed) and compiles the
+installer. The two steps can also be run individually — `./build.ps1` to
+publish, then `ISCC.exe installer\DontTouchMeBro.iss` to compile.
+
+The resulting `installer\Output\DontTouchMeBro-Setup-*.exe` installs for the
+current user (no admin needed to install) and adds a Start Menu shortcut. The
+app itself still requests Administrator when it runs (it needs it to toggle
+devices).
+
 ## How do I make it work my Device or Touch Screen
 
-At this point you will need a text file in the same path as the executable called `device-id.txt` entering your specific Device instance path.
+The easiest way is to launch the app and pick your device from the tray icon's
+**Configure** dialog. Your choice is saved to
+`%APPDATA%\DontTouchMeBro\device-id.txt`.
+
+You can also create that file yourself: put your specific Device Instance Path
+in `%APPDATA%\DontTouchMeBro\device-id.txt`. (Older versions kept this file next
+to the executable; on first run the app migrates it to the new location
+automatically.)
 
 
 ## How do I find my Device Instance Path?
