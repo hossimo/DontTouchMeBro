@@ -76,8 +76,7 @@ namespace DontTouchMeBro
             this.Cancel_button.TabIndex = 4;
             this.Cancel_button.Text = "Cancel";
             this.Cancel_button.UseVisualStyleBackColor = true;
-            this.Cancel_button.Click += new System.EventHandler(this.Cancel_button_Click);
-            // 
+            //
             // OK_Button
             // 
             this.OK_Button.AutoSize = true;

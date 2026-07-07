@@ -60,10 +60,6 @@ namespace DontTouchMeBro
             }
         }
 
-        private void Cancel_button_Click(object sender, EventArgs e)
-        {
-        }
-
         private void OK_Button_Click(object sender, EventArgs e)
         {
             Program.SetDeviceID(DeviceID_textBox.Text);

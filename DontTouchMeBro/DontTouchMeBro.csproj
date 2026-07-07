@@ -21,9 +21,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Include="device-id.txt">
+    <!-- device-id.txt is user-specific and untracked (see device-id.txt.example).
+         Only copy it when it exists so a fresh clone still builds; the app also
+         creates it at runtime via the Configure dialog. -->
+    <None Include="device-id.txt" Condition="Exists('device-id.txt')">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </None>
+    <None Include="device-id.txt.example" />
   </ItemGroup>
 
 </Project>
