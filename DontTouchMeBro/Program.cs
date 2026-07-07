@@ -61,8 +61,9 @@ namespace DontTouchMeBro
         //OnShowSettings
         public static void OnShowSettings(object sender, EventArgs e)
         {
-            string strExeFilePath = System.Reflection.Assembly.GetExecutingAssembly().Location;
-            string strWorkPath = Path.GetDirectoryName(strExeFilePath);
+            // AppContext.BaseDirectory works in single-file publishes, where
+            // Assembly.Location returns an empty string.
+            string strWorkPath = AppContext.BaseDirectory;
 
             ProcessStartInfo start = new ProcessStartInfo
             {

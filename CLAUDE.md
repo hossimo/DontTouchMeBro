@@ -24,7 +24,17 @@ dotnet build DontTouchMeBro.sln
 # Run — must be launched elevated (the manifest forces a UAC prompt).
 # From an elevated shell:
 dotnet run --project DontTouchMeBro/DontTouchMeBro.csproj
+
+# Publish a distributable build (self-contained single-file x64 by default,
+# output in .\dist\win-x64). See the script header for parameters.
+.\build.ps1
 ```
+
+`build.ps1` wraps `dotnet publish`. It defaults to a self-contained,
+single-file build so end users don't need the .NET runtime installed, and it
+strips the dev-only `device-id.txt` from the output. Single-file publishing is
+why app-directory lookups must use `AppContext.BaseDirectory`, not
+`Assembly.Location` (which returns an empty string in single-file apps).
 
 - Toolchain confirmed working: .NET SDK 10.0.x.
 - There are **no tests** in this repo.

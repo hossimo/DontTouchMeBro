@@ -351,3 +351,6 @@ MigrationBackup/
 
 # User-specific device configuration (see device-id.txt.example for the format)
 device-id.txt
+
+# Publish output from build.ps1
+dist/
