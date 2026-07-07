@@ -47,12 +47,16 @@ why app-directory lookups must use `AppContext.BaseDirectory`, not
 
 ## Packaging
 
-- `installer/DontTouchMeBro.iss` is an Inno Setup script producing a **per-user**
+- `make-installer.ps1` is the one-step entry point: it runs `build.ps1` then
+  compiles the installer with ISCC (auto-detected in the per-user and machine
+  Inno Setup locations). `-SkipBuild` recompiles without republishing;
+  `-Version` flows through to the setup filename.
+- `installer/DontTouchMeBro.iss` is the Inno Setup script producing a **per-user**
   installer (`PrivilegesRequired=lowest`, installs to `{autopf}` →
   `%LocalAppData%\Programs`) with a Start Menu shortcut. It packages the
-  single-file exe from `dist\win-x64`, so run `build.ps1` first. Compiled
-  installers land in `installer\Output\` (gitignored). The app version is read
-  from the exe (`GetFileVersion`) so it tracks `AssemblyInfo.cs`.
+  single-file exe from `dist\win-x64`. Compiled installers land in
+  `installer\Output\` (gitignored). The app version is read from the exe
+  (`GetVersionNumbersString`) so it tracks `AssemblyInfo.cs`.
 
 ## Architecture / where things live
 

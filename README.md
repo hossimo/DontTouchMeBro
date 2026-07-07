@@ -22,13 +22,16 @@ Well Maybe I'll flush it out to ask the user for a Device instance path and stor
 
 ## Installing
 
-Build a distributable exe with `./build.ps1` (self-contained, no .NET runtime
-needed), then compile the installer with [Inno Setup](https://jrsoftware.org/isinfo.php):
+Build the installer in one step with [Inno Setup](https://jrsoftware.org/isinfo.php)
+installed:
 
 ```powershell
-./build.ps1
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\DontTouchMeBro.iss
+./make-installer.ps1
 ```
+
+This publishes a self-contained exe (no .NET runtime needed) and compiles the
+installer. The two steps can also be run individually — `./build.ps1` to
+publish, then `ISCC.exe installer\DontTouchMeBro.iss` to compile.
 
 The resulting `installer\Output\DontTouchMeBro-Setup-*.exe` installs for the
 current user (no admin needed to install) and adds a Start Menu shortcut. The
