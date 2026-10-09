@@ -357,3 +357,8 @@ dist/
 
 # Inno Setup compiled installers
 installer/Output/
+
+# Local AI-assistant / review notes and Claude Code state (kept locally, not tracked)
+CLAUDE.md
+REVIEW.md
+.claude/
