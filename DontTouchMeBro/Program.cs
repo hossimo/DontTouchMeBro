@@ -10,6 +10,15 @@ namespace DontTouchMeBro
     {
         static public DeviceManager.DeviceItem CurrentDevice;
 
+        // The device ID from the config file. Kept separately from CurrentDevice
+        // because CurrentDevice.id is null while the device isn't present.
+        static string configuredDeviceID;
+
+        // Re-reads the device state periodically so the icon follows changes made
+        // elsewhere (Device Manager, unplug, sleep). See OnStateTimerTick.
+        static System.Windows.Forms.Timer stateTimer;
+        const int StatePollIntervalMs = 10000;
+
         // Config lives in %APPDATA%\DontTouchMeBro so it survives an install and
         // is found regardless of the process working directory (e.g. when
         // launched from a Start Menu shortcut).
@@ -47,7 +56,8 @@ namespace DontTouchMeBro
 
             mainForm = new MainForm();
             MigrateLegacyConfig();
-            CurrentDevice = DeviceManager.GetDeviceID(ReadConfigFile(path));
+            configuredDeviceID = ReadConfigFile(path);
+            CurrentDevice = QueryDevice(configuredDeviceID);
 
 
             Debug.WriteLine($"DEVICE CODE: {CurrentDevice.ConfigManagerErrorCode}");
@@ -55,8 +65,64 @@ namespace DontTouchMeBro
             // unknown ones) to the right icon, so a single call is enough.
             mainForm.SetDeviceIcon(CurrentDevice);
 
-            Application.Run(mainForm);
-            mutex.ReleaseMutex();
+            // A UI-thread timer (rather than a WMI event watcher) keeps this simple:
+            // no cross-thread marshalling, and one targeted query every few seconds
+            // is cheap.
+            stateTimer = new System.Windows.Forms.Timer { Interval = StatePollIntervalMs };
+            stateTimer.Tick += OnStateTimerTick;
+            stateTimer.Start();
+
+            try
+            {
+                Application.Run(mainForm);
+            }
+            finally
+            {
+                stateTimer.Dispose();
+                mutex.ReleaseMutex();
+            }
+        }
+
+        // Query the device, logging and returning an empty item on WMI failure.
+        static DeviceManager.DeviceItem QueryDevice(string deviceID)
+        {
+            try
+            {
+                return DeviceManager.GetDeviceID(deviceID);
+            }
+            catch (Exception ex)
+            {
+                ErrorLogger.LogError($"Querying device {deviceID}", ex);
+                return new DeviceManager.DeviceItem();
+            }
+        }
+
+        // Refresh the icon if the device's state changed outside this app.
+        static void OnStateTimerTick(object sender, EventArgs e)
+        {
+            if (string.IsNullOrEmpty(configuredDeviceID))
+            {
+                return;
+            }
+
+            DeviceManager.DeviceItem latest;
+            try
+            {
+                latest = DeviceManager.GetDeviceID(configuredDeviceID);
+            }
+            catch (Exception ex)
+            {
+                // Don't spam the Event Log every poll; transient WMI errors are common.
+                Debug.WriteLine($"State poll failed: {ex.Message}");
+                return;
+            }
+
+            if (latest.id != CurrentDevice.id || latest.ConfigManagerErrorCode != CurrentDevice.ConfigManagerErrorCode)
+            {
+                Debug.WriteLine($"Device state changed: {CurrentDevice.ConfigManagerErrorCode} -> {latest.ConfigManagerErrorCode}");
+                CurrentDevice = latest;
+                mainForm.SetDeviceIcon(CurrentDevice);
+            }
         }
 
         // EVENTS
@@ -118,18 +184,28 @@ namespace DontTouchMeBro
         }
 
         //OnDeviceChange
-        public static void SetDeviceID(string deviceID)
+        // Save the new device ID, and only switch to it once it's on disk.
+        // Returns false (after telling the user) if the config couldn't be written.
+        public static bool SetDeviceID(string deviceID)
         {
-            CurrentDevice = DeviceManager.GetDeviceID(deviceID);
-            WriteConfigFile(path, deviceID);
-            
-            mainForm.SetDeviceIcon(CurrentDevice);
+            deviceID = deviceID?.Trim() ?? string.Empty;
+
+            if (!WriteConfigFile(path, deviceID))
+            {
+                return false;
+            }
             Debug.WriteLine($"Wrote Device ID: {deviceID} to config {path}.");
+
+            configuredDeviceID = deviceID;
+            CurrentDevice = QueryDevice(deviceID);
+            mainForm.SetDeviceIcon(CurrentDevice);
+            return true;
         }
 
-        public static string GetDeviceID()
+        // The device ID from the config file (may be null/empty if not configured).
+        public static string GetConfiguredDeviceID()
         {
-            return CurrentDevice.id;
+            return configuredDeviceID;
         }
 
         public static DeviceManager.DeviceItem GetCurrentDevice()
@@ -137,6 +213,8 @@ namespace DontTouchMeBro
             return CurrentDevice;
         }
 
+        // Returns the configured device ID, or null if there isn't one (missing or
+        // empty file) or it couldn't be read.
         static string ReadConfigFile(string path)
         {
             string result = null;
@@ -145,25 +223,40 @@ namespace DontTouchMeBro
                 result = File.ReadAllText(path).Trim();
                 Debug.WriteLine($"Read Device ID: {result} from config {path}.");
             }
-            catch (Exception)
+            catch (Exception ex) when (ex is FileNotFoundException || ex is DirectoryNotFoundException)
+            {
+                result = null;
+            }
+            catch (Exception ex)
+            {
+                ErrorLogger.LogError($"Reading config {path}", ex);
+                MessageBox.Show($"Could not read the device configuration at\n{path}\n\n{ex.Message}", "Could not read config");
+                return null;
+            }
+
+            if (string.IsNullOrEmpty(result))
             {
                 MessageBox.Show($"No device is configured yet.\n\nUse the tray icon's \"Configure\" option to pick a device, or create a text file at\n{path}\ncontaining the Device Instance Path you want to control.", "No device configured");
+                return null;
             }
 
             return result;
         }
 
-        static void WriteConfigFile(string path, string deviceID)
+        // Returns false (after telling the user) if the file couldn't be written.
+        static bool WriteConfigFile(string path, string deviceID)
         {
             try
             {
                 Directory.CreateDirectory(Path.GetDirectoryName(path));
                 File.WriteAllText(path, deviceID);
+                return true;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                MessageBox.Show($"Could not write to {path}", "Could not write file");
-                throw;
+                ErrorLogger.LogError($"Writing config {path}", ex);
+                MessageBox.Show($"Could not write to {path}\n\n{ex.Message}", "Could not write file");
+                return false;
             }
         }
         
