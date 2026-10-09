@@ -177,10 +177,20 @@ namespace DontTouchMeBro
         //OnShowAbout
         public static void OnShowAbout(object sender, EventArgs e)
         {
-            AboutWindow aboutWindow = new AboutWindow();
-            aboutWindow.SetDesktopLocation(Cursor.Position.X - aboutWindow.Width, Cursor.Position.Y - aboutWindow.Height);
+            // The tray menu stays usable while a modal dialog is open, so this
+            // can be re-entered. Bring the existing dialog forward instead of
+            // nesting a second one.
+            if (AboutWindow.ActivateOpenInstance())
+                return;
 
-            aboutWindow.ShowDialog();
+            // Modal forms are not disposed automatically when closed.
+            using (AboutWindow aboutWindow = new AboutWindow())
+            {
+                aboutWindow.StartPosition = FormStartPosition.Manual;
+                aboutWindow.Location = AboutWindow.GetLocationNear(Cursor.Position, aboutWindow.Size);
+
+                aboutWindow.ShowDialog();
+            }
         }
 
         //OnDeviceChange
