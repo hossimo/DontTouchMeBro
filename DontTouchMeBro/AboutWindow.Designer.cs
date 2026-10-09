@@ -48,7 +48,9 @@ namespace DontTouchMeBro
             this.DeviceId_Label = new System.Windows.Forms.Label();
             this.listView1 = new System.Windows.Forms.ListView();
             this.version_label = new System.Windows.Forms.Label();
-            flowLayoutPanel2 = new System.Windows.Forms.FlowLayoutPanel();
+            this.showAllClasses_checkBox = new System.Windows.Forms.CheckBox();
+            this.status_label = new System.Windows.Forms.Label();
+            flowLayoutPanel2 =new System.Windows.Forms.FlowLayoutPanel();
             flowLayoutPanel2.SuspendLayout();
             this.SuspendLayout();
             // 
@@ -109,8 +111,29 @@ namespace DontTouchMeBro
             this.DeviceId_Label.Size = new System.Drawing.Size(55, 13);
             this.DeviceId_Label.TabIndex = 2;
             this.DeviceId_Label.Text = "Device ID";
-            this.DeviceId_Label.Click += new System.EventHandler(this.OK_Button_Click);
-            // 
+            //
+            // showAllClasses_checkBox
+            //
+            this.showAllClasses_checkBox.AutoSize = true;
+            this.showAllClasses_checkBox.Location = new System.Drawing.Point(12, 33);
+            this.showAllClasses_checkBox.Name = "showAllClasses_checkBox";
+            this.showAllClasses_checkBox.Size = new System.Drawing.Size(141, 17);
+            this.showAllClasses_checkBox.TabIndex = 1;
+            this.showAllClasses_checkBox.Text = "Show all device classes";
+            this.showAllClasses_checkBox.UseVisualStyleBackColor = true;
+            this.showAllClasses_checkBox.CheckedChanged += new System.EventHandler(this.ShowAllClasses_checkBox_CheckedChanged);
+            //
+            // status_label
+            //
+            this.status_label.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.status_label.AutoEllipsis = true;
+            this.status_label.Location = new System.Drawing.Point(170, 34);
+            this.status_label.Name = "status_label";
+            this.status_label.Size = new System.Drawing.Size(402, 15);
+            this.status_label.TabIndex = 9;
+            this.status_label.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
+            //
             // listView1
             // 
             this.listView1.Anchor = ((System.Windows.Forms.AnchorStyles)((((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Bottom) 
@@ -119,9 +142,9 @@ namespace DontTouchMeBro
             this.listView1.CheckBoxes = true;
             this.listView1.GridLines = true;
             this.listView1.HideSelection = false;
-            this.listView1.Location = new System.Drawing.Point(12, 31);
+            this.listView1.Location = new System.Drawing.Point(12, 55);
             this.listView1.Name = "listView1";
-            this.listView1.Size = new System.Drawing.Size(560, 372);
+            this.listView1.Size = new System.Drawing.Size(560, 348);
             this.listView1.TabIndex = 7;
             this.listView1.UseCompatibleStateImageBehavior = false;
             this.listView1.View = System.Windows.Forms.View.Details;
@@ -146,6 +169,8 @@ namespace DontTouchMeBro
             this.ClientSize = new System.Drawing.Size(584, 441);
             this.ControlBox = false;
             this.Controls.Add(this.version_label);
+            this.Controls.Add(this.status_label);
+            this.Controls.Add(this.showAllClasses_checkBox);
             this.Controls.Add(this.DeviceId_Label);
             this.Controls.Add(this.listView1);
             this.Controls.Add(this.DeviceID_textBox);
@@ -171,5 +196,7 @@ namespace DontTouchMeBro
         private Button OK_Button;
         private ListView listView1;
         private Label version_label;
+        private CheckBox showAllClasses_checkBox;
+        private Label status_label;
     }
 }

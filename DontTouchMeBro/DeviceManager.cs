@@ -31,6 +31,7 @@ namespace DontTouchMeBro
             public string description;
             public string manufacturer;
             public string ConfigManagerErrorCode;
+            public string pnpClass;
         }
 
         // Get ManagementObjectSearcher
@@ -146,6 +147,38 @@ namespace DontTouchMeBro
                 }
             }
             return false;
+        }
+
+        // Get every Win32_PnPEntity regardless of device class (used by the
+        // Configure dialog's "Show all device classes" option). Unlike
+        // GetDeviceItems this also fills in pnpClass so the UI can tell
+        // devices apart.
+        public static List<DeviceItem> GetAllDeviceItems()
+        {
+            const string SCOPE = "root\\CIMV2";
+            const string QUERY = "SELECT DeviceID, Description, Manufacturer, ConfigManagerErrorCode, PNPClass FROM Win32_PnPEntity";
+
+            List<DeviceItem> devices = new List<DeviceItem>();
+
+            using (ManagementObjectSearcher deviceSearcher = new ManagementObjectSearcher(SCOPE, QUERY))
+            using (ManagementObjectCollection results = deviceSearcher.Get())
+            {
+                foreach (ManagementObject item in results.Cast<ManagementObject>())
+                {
+                    using (item)
+                    {
+                        devices.Add(new DeviceItem
+                        {
+                            id = item["DeviceID"]?.ToString(),
+                            description = item["Description"]?.ToString(),
+                            manufacturer = item["Manufacturer"]?.ToString(),
+                            ConfigManagerErrorCode = item["ConfigManagerErrorCode"]?.ToString(),
+                            pnpClass = item["PNPClass"]?.ToString()
+                        });
+                    }
+                }
+            }
+            return devices;
         }
     }
 }
