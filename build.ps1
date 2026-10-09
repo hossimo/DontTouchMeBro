@@ -6,7 +6,7 @@
     Wraps `dotnet publish` with sensible defaults for shipping this WinForms
     tray app. By default it produces a self-contained, single-file x64 build so
     end users do NOT need the .NET runtime installed - which is what the
-    (future) per-user installer will package.
+    installer (installer\DontTouchMeBro.iss) packages.
 
     The dev-only device-id.txt is stripped from the output so a build never
     ships someone's personal device configuration.

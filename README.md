@@ -33,10 +33,77 @@ This publishes a self-contained exe (no .NET runtime needed) and compiles the
 installer. The two steps can also be run individually — `./build.ps1` to
 publish, then `ISCC.exe installer\DontTouchMeBro.iss` to compile.
 
-The resulting `installer\Output\DontTouchMeBro-Setup-*.exe` installs for the
-current user (no admin needed to install) and adds a Start Menu shortcut. The
-app itself still requests Administrator when it runs (it needs it to toggle
-devices).
+The resulting `installer\Output\DontTouchMeBro-Setup-*.exe` installs **for all
+users into `C:\Program Files\DontTouchMeBro`** and needs Administrator to
+install. It adds an all-users Start Menu shortcut.
+
+Why per-machine: the app always runs as Administrator (it needs that to toggle
+devices). If its exe lived in a folder your normal, non-elevated account can
+write to, any program running as you could replace it and have the replacement
+run as admin the next time you start it. Program Files is only writable by
+administrators, so that isn't possible.
+
+### Start automatically when I sign in
+
+The installer has a **Start automatically when I sign in** option (checked by
+default). It creates a Scheduled Task named `DontTouchMeBro` that starts the
+app when you sign in, with highest privileges, so there is **no UAC prompt at
+each sign-in**. (The usual `Run` registry key can't be used: Windows silently
+skips apps that require Administrator there.)
+
+The task:
+
+- runs only for the account that approved the installer's UAC prompt (see
+  [Known limitations](#known-limitations)), only when that account signs in
+  interactively;
+- has no run-time limit and isn't blocked or stopped on battery power (the
+  Task Scheduler defaults would otherwise kill the tray app after 72 hours);
+- is removed when you uninstall, or when you re-run the installer with the
+  option unchecked.
+
+You can see or disable it in Task Scheduler (`taskschd.msc`, top-level
+library), or from an elevated prompt:
+`schtasks /Query /TN DontTouchMeBro` / `schtasks /Delete /TN DontTouchMeBro /F`.
+
+### Upgrading from an older (per-user) install
+
+Earlier installers put the app in `%LocalAppData%\Programs\DontTouchMeBro` for
+the current user only. When the new installer finds that copy (in the profile
+of the account running setup) it offers to remove it first; this is
+recommended. Your device setting in `%APPDATA%\DontTouchMeBro\device-id.txt`
+is not touched.
+
+If the old copy wasn't found (see below) or you chose to keep it, remove it
+yourself from **Settings > Apps > Installed apps** (it's the entry installed
+under your user, not the Program Files one), or run
+`%LocalAppData%\Programs\DontTouchMeBro\unins000.exe`.
+
+### Uninstalling
+
+Uninstall from **Settings > Apps**. The uninstaller stops the app if it's
+running, deletes the sign-in task, and removes the program files. Your
+`%APPDATA%\DontTouchMeBro` config folder is left in place.
+
+### Known limitations
+
+These apply when you sign in as a **standard (non-admin) user** and someone
+types an *administrator's* credentials into the UAC prompt ("over-the-shoulder"
+elevation). The app and the installer then run as that administrator account,
+not as you:
+
+- **Config location:** the app's config goes to the *administrator's*
+  `%APPDATA%\DontTouchMeBro\device-id.txt`, not yours.
+- **Start at sign-in:** the task is created for the administrator account (it
+  starts when *they* sign in), not for you. This is unavoidable: a standard
+  account's "highest privileges" are still non-admin, so a task can never start
+  this app elevated for it. Standard users start the app from the Start Menu
+  and approve the UAC prompt each time.
+- **Upgrade cleanup:** the installer looks for an old per-user copy in the
+  administrator's profile, so your own old copy isn't found; remove it manually
+  as described above.
+
+If your everyday account is an administrator (the normal case, where UAC just
+asks you to click **Yes**), none of this applies.
 
 ## How do I make it work my Device or Touch Screen
 
@@ -65,7 +132,12 @@ Well in order for an application to make changes to any devices on the computer 
 
 ## How can I get this app to run at startup without asking for UAC each time
 
-Lots of options here but probably the easiest is to use Task Scheduler, something like [this](https://superuser.com/questions/770420/schedule-a-task-with-admin-privileges-without-a-user-prompt-in-windows-7)
+Tick **Start automatically when I sign in** in the installer (it's on by
+default). It sets up a Scheduled Task that starts the app elevated at sign-in
+without a prompt; see [Start automatically when I sign in](#start-automatically-when-i-sign-in)
+above. If you run the exe without the installer, you can create a similar task
+yourself in Task Scheduler ("Run with highest privileges", trigger "At log on",
+and clear "Stop the task if it runs longer than").
 
 ## Hey, so if this asks for app ask for Admin rights can I trust it?
 In a short, No; never blindly trust someone you don't know. I tried to do the right thing but you trust you.
