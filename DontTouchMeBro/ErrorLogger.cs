@@ -63,24 +63,5 @@ namespace DontTouchMeBro
                 Debug.WriteLine($"Failed to log error: {logEx.Message}");
             }
         }
-
-        public static void LogInfo(string message)
-        {
-            try
-            {
-                string logEntry = $"INFO: {message}";
-
-                lock (_lockObj)
-                {
-                    EventLog.WriteEntry(EventSource, logEntry, EventLogEntryType.Information);
-                }
-
-                Debug.WriteLine(message);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Failed to log info: {ex.Message}");
-            }
-        }
     }
 }
