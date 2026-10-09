@@ -100,21 +100,35 @@ namespace DontTouchMeBro
                     RecreateNotifyIcon();
                 }
                 
+                string text;
                 switch (deviceItem.ConfigManagerErrorCode)
                 {
-                    case "0":
+                    case DeviceManager.ConfigManagerErrorCode.OK:
                         _notifyIcon.Icon = iconYes;
-                        _notifyIcon.Text = $"Don't Touch Me Bro - {deviceItem.description} Enabled";
+                        text = $"Don't Touch Me Bro - {deviceItem.description} Enabled";
                         break;
-                    case "22":
+                    case DeviceManager.ConfigManagerErrorCode.DISABLED:
                         _notifyIcon.Icon = iconNo;
-                        _notifyIcon.Text = $"Don't Touch Me Bro - {deviceItem.description} Disabled";
+                        text = $"Don't Touch Me Bro - {deviceItem.description} Disabled";
                         break;
                     default:
                         _notifyIcon.Icon = iconError;
-                        _notifyIcon.Text = "Don't Touch Me Bro - Device ID Not Found";
+                        if (deviceItem.id == null)
+                        {
+                            text = string.IsNullOrEmpty(Program.GetConfiguredDeviceID())
+                                ? "Don't Touch Me Bro - No device configured"
+                                : "Don't Touch Me Bro - Device not found";
+                        }
+                        else
+                        {
+                            text = $"Don't Touch Me Bro - {deviceItem.description}: {DeviceManager.DescribeErrorCode(deviceItem.ConfigManagerErrorCode)}";
+                        }
                         break;
                 }
+
+                // NotifyIcon.Text throws if longer than 127 characters.
+                const int MaxTooltipLength = 127;
+                _notifyIcon.Text = text.Length > MaxTooltipLength ? text.Substring(0, MaxTooltipLength) : text;
                 
                 // Ensure the icon is visible
                 if (!_notifyIcon.Visible)
@@ -189,17 +203,77 @@ namespace DontTouchMeBro
                 return;
             }
 
-            // toggle device based on icon state
-            if (_notifyIcon.Icon == iconYes)
+            ToggleDevice();
+        }
+
+        // Toggle the configured device based on its real current state (the icon
+        // may be stale if the device was changed elsewhere), and report failures.
+        void ToggleDevice()
+        {
+            string deviceID = Program.GetConfiguredDeviceID(); // dont like how this is bound to Program
+            if (string.IsNullOrEmpty(deviceID))
             {
-                DeviceManager.DisableDevice(Program.CurrentDevice); // dont like how this is bound to Program
-                SetDeviceIcon(Program.CurrentDevice);
+                ShowBalloon("No device configured", "Right-click the tray icon and choose Configure to pick a device.", ToolTipIcon.Info);
+                return;
             }
-            else
+
+            try
             {
-                DeviceManager.EnableDevice(Program.CurrentDevice); // dont like how this is bound to Program
-                SetDeviceIcon(Program.CurrentDevice);
+                DeviceManager.DeviceItem current = DeviceManager.GetDeviceID(deviceID);
+                Program.CurrentDevice = current;
+
+                DeviceManager.DeviceMethodResult result;
+                string action;
+                switch (current.ConfigManagerErrorCode)
+                {
+                    case DeviceManager.ConfigManagerErrorCode.OK:
+                        action = "disable";
+                        result = DeviceManager.DisableDevice(current);
+                        break;
+                    case DeviceManager.ConfigManagerErrorCode.DISABLED:
+                        action = "enable";
+                        result = DeviceManager.EnableDevice(current);
+                        break;
+                    default:
+                        // Not present, not connected, or in an error state: there's
+                        // nothing sensible to toggle, so just report it.
+                        SetDeviceIcon(current);
+                        string state = current.id == null
+                            ? $"Device not found:\n{deviceID}"
+                            : $"{current.description}: {DeviceManager.DescribeErrorCode(current.ConfigManagerErrorCode)}";
+                        ShowBalloon("Can't toggle device", state, ToolTipIcon.Warning);
+                        return;
+                }
+
+                Program.CurrentDevice = result.Device;
+                SetDeviceIcon(result.Device);
+
+                if (result.ReturnValue != 0)
+                {
+                    ErrorLogger.LogError($"Failed to {action} {deviceID}: WMI returned {result.ReturnValue}", null);
+                    ShowBalloon($"Failed to {action} device", $"{current.description} (error {result.ReturnValue}).", ToolTipIcon.Error);
+                }
+                else if (result.Device.ConfigManagerErrorCode == DeviceManager.ConfigManagerErrorCode.RESTART_REQUIRED)
+                {
+                    ShowBalloon("Restart required", $"Windows needs to restart to {action} {current.description}.", ToolTipIcon.Warning);
+                }
             }
+            catch (Exception ex)
+            {
+                // ManagementException (WMI failure), UnauthorizedAccessException,
+                // or InvalidOperationException (device vanished mid-toggle).
+                ErrorLogger.LogError($"Toggling device {deviceID}", ex);
+                ShowBalloon("Couldn't toggle device", ex.Message, ToolTipIcon.Error);
+            }
+        }
+
+        void ShowBalloon(string title, string text, ToolTipIcon icon)
+        {
+            if (_notifyIcon == null)
+            {
+                return;
+            }
+            _notifyIcon.ShowBalloonTip(5000, title, string.IsNullOrEmpty(text) ? title : text, icon);
         }
 
     }
