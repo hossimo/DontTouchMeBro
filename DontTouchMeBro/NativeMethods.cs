@@ -6,45 +6,31 @@ namespace DontTouchMeBro
 {
     class NativeMethods
     {
-        public const int WM_DISPLAYCHANGE = 0x007E;
-        public const int WM_TASKBARCREATED = 0x0803;
+        public const uint MSGFLT_ALLOW = 1;
 
-        [DllImport("user32.dll", CharSet = CharSet.Auto)]
-        public static extern IntPtr RegisterWindowMessage(string lpString);
+        // "TaskbarCreated" is a registered message: its ID is assigned at runtime and
+        // must be obtained from RegisterWindowMessage, never hard-coded.
+        [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        public static extern uint RegisterWindowMessage(string lpString);
 
-        [DllImport("user32.dll", CharSet = CharSet.Auto)]
-        public static extern bool ChangeWindowMessageFilter(uint message, uint dwFlag);
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool ChangeWindowMessageFilterEx(IntPtr hwnd, uint message, uint action, IntPtr pChangeFilterStruct);
 
-        // Add this method to ensure window messages are properly filtered
-        public static void EnsureMessageFilters()
+        public static uint RegisterTaskbarCreatedMessage()
         {
-            // Add message filter for TASKBARCREATED
-            ChangeWindowMessageFilter(WM_TASKBARCREATED, 1);
-            
-            // Add message filter for DISPLAYCHANGE
-            ChangeWindowMessageFilter(WM_DISPLAYCHANGE, 1);
-            
-            // These additional messages can help with shell integration
-            ChangeWindowMessageFilter(0x0049, 1); // WM_COPYDATA
-            ChangeWindowMessageFilter(0x0312, 1); // WM_HOTKEY
-        }
-
-        // Modify the RegisterTaskbarCreatedMessage method to use the improved filter
-        public static IntPtr RegisterTaskbarCreatedMessage()
-        {
-            EnsureMessageFilters();
-            
-            IntPtr msgId = RegisterWindowMessage("TaskbarCreated");
+            uint msgId = RegisterWindowMessage("TaskbarCreated");
             Debug.WriteLine($"Registered TaskbarCreated message: {msgId}");
             return msgId;
         }
 
-        public static IntPtr RegisterDisplayChangeMessage()
+        // The app runs elevated, so UIPI drops TaskbarCreated broadcasts from the
+        // non-elevated Explorer unless this specific window explicitly allows it.
+        public static bool AllowTaskbarCreatedMessage(IntPtr hwnd, uint taskbarCreatedMessage)
         {
-            bool result = ChangeWindowMessageFilter(WM_DISPLAYCHANGE, 1);
-            Debug.WriteLineIf(result, "WM_DISPLAYCHANGE ADDED");
-
-            return RegisterWindowMessage("DisplayChange");
+            bool result = ChangeWindowMessageFilterEx(hwnd, taskbarCreatedMessage, MSGFLT_ALLOW, IntPtr.Zero);
+            Debug.WriteLineIf(!result, $"ChangeWindowMessageFilterEx failed: {Marshal.GetLastWin32Error()}");
+            return result;
         }
     }
 }

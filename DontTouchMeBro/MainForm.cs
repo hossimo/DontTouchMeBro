@@ -8,16 +8,20 @@ namespace DontTouchMeBro
     public class MainForm : Form
     {
         NotifyIcon _notifyIcon;
-        private IntPtr _taskbarCreatedMessage;
+        private readonly uint _taskbarCreatedMessage;
 
         readonly Icon iconYes = Properties.Resources.YesIcon;
         readonly Icon iconNo = Properties.Resources.NoIcon;
         readonly Icon iconError = Properties.Resources.ErrorIcon;
 
-        private System.Threading.Timer _watchdogTimer;
-        private bool _isIconVisible = true;
-
         public MainForm()
+        {
+            _taskbarCreatedMessage = NativeMethods.RegisterTaskbarCreatedMessage();
+            _notifyIcon = CreateNotifyIcon();
+        }
+
+        // Builds the tray icon and its context menu.
+        private NotifyIcon CreateNotifyIcon()
         {
             ContextMenuStrip trayMenu = new ContextMenuStrip();
             // I don't like how this depends on Program, really need to setup a better messaging model
@@ -25,26 +29,30 @@ namespace DontTouchMeBro
             trayMenu.Items.Add("Configure", null, Program.OnShowAbout);
             trayMenu.Items.Add("Exit", null, Program.OnExit);
 
-            _notifyIcon = new NotifyIcon
+            NotifyIcon notifyIcon = new NotifyIcon
             {
                 Text = "Dont Touch Me Bro",
                 ContextMenuStrip = trayMenu,
                 Visible = true
             };
 
-            _notifyIcon.Click += OnClick;
-
-            _taskbarCreatedMessage = NativeMethods.RegisterTaskbarCreatedMessage();
-
-            // Set up watchdog timer to check icon status every 30 seconds
-            _watchdogTimer = new System.Threading.Timer(
-                CheckNotifyIconStatus, 
-                null, 
-                TimeSpan.FromSeconds(30), 
-                TimeSpan.FromSeconds(30));
+            notifyIcon.Click += OnClick;
+            return notifyIcon;
         }
 
         // EVENTS
+
+        // Once the window handle exists, let the (non-elevated) Explorer's
+        // TaskbarCreated broadcast through UIPI to this window only.
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+
+            if (_taskbarCreatedMessage != 0)
+            {
+                NativeMethods.AllowTaskbarCreatedMessage(Handle, _taskbarCreatedMessage);
+            }
+        }
 
         // Set the main windows to hidden and minimized.
         // this window is only used to handle the tray icon an listen for events
@@ -60,7 +68,7 @@ namespace DontTouchMeBro
         // LISTEN TO THE MESSAGE PUMP.
         protected override void WndProc(ref Message m)
         {
-            if (m.Msg == NativeMethods.WM_TASKBARCREATED)
+            if (_taskbarCreatedMessage != 0 && (uint)m.Msg == _taskbarCreatedMessage)
             {
                 Debug.WriteLine("WM_TASKBARCREATED - Explorer restarted, restoring icon");
                 RestoreNotifyIcon();
@@ -72,12 +80,6 @@ namespace DontTouchMeBro
         {
             if (disposing)
             {
-                if (_watchdogTimer != null)
-                {
-                    _watchdogTimer.Dispose();
-                    _watchdogTimer = null;
-                }
-                
                 if (_notifyIcon != null)
                 {
                     _notifyIcon.Dispose();
@@ -118,7 +120,6 @@ namespace DontTouchMeBro
                 if (!_notifyIcon.Visible)
                 {
                     _notifyIcon.Visible = true;
-                    _isIconVisible = true;
                 }
             }
             catch (Exception ex)
@@ -127,44 +128,17 @@ namespace DontTouchMeBro
             }
         }
 
-        // Add this method to check and restore the notify icon
-        private void CheckNotifyIconStatus(object state)
-        {
-            try
-            {
-                if (_notifyIcon == null)
-                {
-                    Debug.WriteLine("Watchdog detected null notify icon, recreating...");
-                    RecreateNotifyIcon();
-                    return;
-                }
-
-                // Check if the icon is visible (stored state doesn't match actual state)
-                if (_isIconVisible && !_notifyIcon.Visible)
-                {
-                    Debug.WriteLine("Watchdog detected invisible icon, restoring...");
-                    RestoreNotifyIcon();
-                }
-            }
-            catch (Exception ex)
-            {
-                ErrorLogger.LogError("Watchdog timer error", ex);
-            }
-        }
-
-        // Add this method to restore the notify icon
+        // Re-add the notify icon after Explorer restarts (TaskbarCreated)
         public void RestoreNotifyIcon()
         {
             try
             {
                 if (_notifyIcon != null)
                 {
-                    // Sometimes toggling visibility helps restore the icon
+                    // Toggling visibility re-adds the icon to the new taskbar
                     _notifyIcon.Visible = false;
-                    System.Threading.Thread.Sleep(100);
                     _notifyIcon.Visible = true;
-                    _isIconVisible = true;
-                    
+
                     // Also make sure the icon itself is properly set
                     SetDeviceIcon(Program.GetCurrentDevice());
                     
@@ -191,21 +165,8 @@ namespace DontTouchMeBro
                     _notifyIcon.Dispose();
                 }
                 
-                ContextMenuStrip trayMenu = new ContextMenuStrip();
-                trayMenu.Items.Add("Reveal in File Explorer", null, Program.OnShowSettings);
-                trayMenu.Items.Add("Configure", null, Program.OnShowAbout);
-                trayMenu.Items.Add("Exit", null, Program.OnExit);
+                _notifyIcon = CreateNotifyIcon();
 
-                _notifyIcon = new NotifyIcon
-                {
-                    Text = "Dont Touch Me Bro",
-                    ContextMenuStrip = trayMenu,
-                    Visible = true
-                };
-
-                _notifyIcon.Click += OnClick;
-                _isIconVisible = true;
-                
                 // Make sure the icon is set properly
                 SetDeviceIcon(Program.GetCurrentDevice());
                 
