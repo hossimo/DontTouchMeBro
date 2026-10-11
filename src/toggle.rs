@@ -120,6 +120,28 @@ pub struct ToggleReport {
     pub notice: Option<Notice>,
     /// Error to write to the log, if any.
     pub log: Option<String>,
+    /// What was changed, for the log (so it shows clicks are arriving).
+    pub done: Option<String>,
+}
+
+/// The tray menu's toggle item for a device state: its text, and whether
+/// it can be clicked (it's greyed out, saying why, when it can't).
+pub fn menu_item(state: &DeviceState) -> (String, bool) {
+    match state {
+        DeviceState::NotConfigured => ("No device configured".to_string(), false),
+        DeviceState::NotFound => ("Configured device not found".to_string(), false),
+        DeviceState::Device(info) => {
+            let name = info.display_name();
+            match action_for(info) {
+                Some(Action::Disable) if !info.can_disable => {
+                    (format!("{name} can't be disabled"), false)
+                }
+                Some(Action::Disable) => (format!("Disable {name}"), true),
+                Some(Action::Enable) => (format!("Enable {name}"), true),
+                None => (format!("{name}: {}", describe_problem(info.problem)), false),
+            }
+        }
+    }
 }
 
 /// Current state of the configured device.
@@ -153,6 +175,7 @@ pub fn toggle(backend: &dyn DeviceBackend, configured: Option<&str>) -> ToggleRe
                     "Querying device {}: {err}",
                     configured.unwrap_or("")
                 )),
+                done: None,
             };
         }
     };
@@ -167,6 +190,7 @@ pub fn toggle(backend: &dyn DeviceBackend, configured: Option<&str>) -> ToggleRe
                     "Right-click the tray icon and choose Configure to pick a device.",
                 )),
                 log: None,
+                done: None,
             };
         }
         DeviceState::NotFound => {
@@ -179,6 +203,7 @@ pub fn toggle(backend: &dyn DeviceBackend, configured: Option<&str>) -> ToggleRe
                     format!("Device not found:\n{id}"),
                 )),
                 log: None,
+                done: None,
             };
         }
         DeviceState::Device(info) => info.clone(),
@@ -197,6 +222,7 @@ pub fn toggle(backend: &dyn DeviceBackend, configured: Option<&str>) -> ToggleRe
             )),
             state: Some(current),
             log: None,
+            done: None,
         };
     };
 
@@ -218,6 +244,7 @@ pub fn toggle(backend: &dyn DeviceBackend, configured: Option<&str>) -> ToggleRe
                 info.instance_id
             )),
             state,
+            done: None,
         },
         Ok(outcome) => {
             let pending_restart = outcome.restart_required
@@ -236,6 +263,12 @@ pub fn toggle(backend: &dyn DeviceBackend, configured: Option<&str>) -> ToggleRe
                 }),
                 state,
                 log: None,
+                done: Some(format!(
+                    "{}d {} ({})",
+                    action.verb(),
+                    info.display_name(),
+                    info.instance_id
+                )),
             }
         }
     }
@@ -431,6 +464,62 @@ mod tests {
             notice.text,
             "Windows needs to restart to disable Touch screen."
         );
+    }
+
+    #[test]
+    fn menu_item_offers_the_right_action() {
+        let mut info = DeviceInfo {
+            description: "HID-compliant consumer control device".into(),
+            product_name: "Keychron Q6 HE".into(),
+            can_disable: true,
+            ..Default::default()
+        };
+        let state = |info: &DeviceInfo| DeviceState::Device(info.clone());
+
+        assert_eq!(
+            menu_item(&state(&info)),
+            ("Disable Keychron Q6 HE".into(), true)
+        );
+        info.problem = problem::DISABLED;
+        assert_eq!(
+            menu_item(&state(&info)),
+            ("Enable Keychron Q6 HE".into(), true)
+        );
+        info.problem = problem::NOT_CONNECTED;
+        assert_eq!(
+            menu_item(&state(&info)),
+            ("Keychron Q6 HE: Not connected".into(), false)
+        );
+        info.problem = problem::NONE;
+        info.can_disable = false;
+        assert_eq!(
+            menu_item(&state(&info)),
+            ("Keychron Q6 HE can't be disabled".into(), false)
+        );
+        assert_eq!(
+            menu_item(&DeviceState::NotConfigured),
+            ("No device configured".into(), false)
+        );
+        assert_eq!(
+            menu_item(&DeviceState::NotFound),
+            ("Configured device not found".into(), false)
+        );
+    }
+
+    #[test]
+    fn successful_toggles_are_reported_for_the_log() {
+        let backend = FakeBackend::with_problem(problem::NONE);
+        let report = toggle(&backend, Some(ID));
+        assert_eq!(report.done, Some(format!("disabled Touch screen ({ID})")));
+
+        let report = toggle(&backend, Some(ID));
+        assert_eq!(report.done, Some(format!("enabled Touch screen ({ID})")));
+
+        let failing = FakeBackend {
+            set_error: Some(DeviceError::new("Access is denied.")),
+            ..FakeBackend::with_problem(problem::NONE)
+        };
+        assert_eq!(toggle(&failing, Some(ID)).done, None);
     }
 
     #[test]

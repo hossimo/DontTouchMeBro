@@ -27,12 +27,12 @@ use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, ChangeWindowMessageFilterEx, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
     DestroyMenu, DestroyWindow, DispatchMessageW, EnumWindows, FindWindowW, GetCursorPos,
     GetMessageW, GetSystemMetrics, GetWindowThreadProcessId, HICON, IMAGE_ICON, IsIconic,
-    IsWindowVisible, LR_DEFAULTCOLOR, LoadImageW, MF_SEPARATOR, MF_STRING, MSG, MSGFLT_ALLOW,
-    PostMessageW, PostQuitMessage, RegisterClassExW, RegisterWindowMessageW, SM_CXSMICON,
-    SM_CYSMICON, SW_RESTORE, SW_SHOWNORMAL, SetForegroundWindow, SetTimer, ShowWindow,
-    TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, TranslateMessage, WM_APP,
-    WM_CONTEXTMENU, WM_DESTROY, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP, WM_TIMER, WNDCLASSEXW,
-    WS_EX_TOOLWINDOW, WS_OVERLAPPED,
+    IsWindowVisible, LR_DEFAULTCOLOR, LoadImageW, MF_GRAYED, MF_SEPARATOR, MF_STRING, MSG,
+    MSGFLT_ALLOW, PostMessageW, PostQuitMessage, RegisterClassExW, RegisterWindowMessageW,
+    SM_CXSMICON, SM_CYSMICON, SW_RESTORE, SW_SHOWNORMAL, SetForegroundWindow, SetMenuDefaultItem,
+    SetTimer, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
+    TranslateMessage, WM_APP, WM_CONTEXTMENU, WM_DESTROY, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP,
+    WM_TIMER, WNDCLASSEXW, WS_EX_TOOLWINDOW, WS_OVERLAPPED,
 };
 use windows::core::{BOOL, PCWSTR, w};
 
@@ -63,6 +63,7 @@ const POLL_INTERVAL_MS: u32 = 10_000;
 const MENU_REVEAL: usize = 1;
 const MENU_CONFIGURE: usize = 2;
 const MENU_EXIT: usize = 3;
+const MENU_TOGGLE: usize = 4;
 
 /// Icon resource IDs, embedded by build.rs.
 const ICON_ENABLED: u16 = 101;
@@ -235,7 +236,8 @@ impl Tray {
         notify(NIM_MODIFY, &data);
     }
 
-    fn toggle(&mut self) {
+    /// Left-click on the icon.
+    fn on_click(&mut self) {
         // A double-click delivers two button-up messages. Treat a click that
         // lands within the double-click time of the last toggle as part of
         // the same gesture, so a double-click doesn't flip the device off
@@ -247,11 +249,17 @@ impl Tray {
         {
             return;
         }
+        self.toggle();
+    }
 
+    fn toggle(&mut self) {
         let report = toggle::toggle(&self.backend, self.configured.as_deref());
         self.last_toggle = Some(Instant::now());
         if let Some(message) = &report.log {
             logging::error(message);
+        }
+        if let Some(message) = &report.done {
+            logging::info(message);
         }
         if let Some(state) = report.state {
             self.set_state(state);
@@ -331,7 +339,7 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             // Without NOTIFYICON_VERSION_4, lParam is the mouse message.
             match lparam.0 as u32 & 0xFFFF {
                 WM_LBUTTONUP => {
-                    with_tray(Tray::toggle);
+                    with_tray(Tray::on_click);
                 }
                 WM_RBUTTONUP | WM_CONTEXTMENU => show_menu(hwnd),
                 _ => {}
@@ -376,12 +384,34 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
 /// Show the tray menu at the cursor and run the chosen command. Holds no
 /// borrow of the tray state while the menu's modal loop runs.
 fn show_menu(hwnd: HWND) {
+    // Re-read the device first so the toggle item matches its real state.
+    let Some((toggle_text, can_toggle)) = with_tray(|tray| {
+        tray.refresh();
+        toggle::menu_item(&tray.state)
+    }) else {
+        return;
+    };
+    // '&' marks a keyboard shortcut in menu text; "&&" is a literal one.
+    let toggle_text = wide(&toggle_text.replace('&', "&&"));
+
     let Ok(menu) = (unsafe { CreatePopupMenu() }) else {
         return;
     };
     unsafe {
+        // Enable / Disable <device> first, in bold (the same as clicking
+        // the icon), or greyed out saying why it can't be toggled.
+        let flags = if can_toggle {
+            MF_STRING
+        } else {
+            MF_STRING | MF_GRAYED
+        };
+        let _ = AppendMenuW(menu, flags, MENU_TOGGLE, PCWSTR(toggle_text.as_ptr()));
+        if can_toggle {
+            let _ = SetMenuDefaultItem(menu, MENU_TOGGLE as u32, 0);
+        }
+        let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
+        let _ = AppendMenuW(menu, MF_STRING, MENU_CONFIGURE, w!("Configure..."));
         let _ = AppendMenuW(menu, MF_STRING, MENU_REVEAL, w!("Reveal in File Explorer"));
-        let _ = AppendMenuW(menu, MF_STRING, MENU_CONFIGURE, w!("Configure"));
         let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
         let _ = AppendMenuW(menu, MF_STRING, MENU_EXIT, w!("Exit"));
     }
@@ -406,6 +436,9 @@ fn show_menu(hwnd: HWND) {
     };
 
     match command {
+        MENU_TOGGLE => {
+            with_tray(Tray::toggle);
+        }
         MENU_REVEAL => {
             with_tray(|tray| tray.reveal_config_folder());
         }
