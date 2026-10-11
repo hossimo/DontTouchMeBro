@@ -5,18 +5,19 @@
 //! Administrator (the app manifest requests it).
 
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
-    CM_DEVNODE_STATUS_FLAGS, CM_DRP_CLASS, CM_DRP_DEVICEDESC, CM_DRP_FRIENDLYNAME, CM_DRP_MFG,
+    CM_DEVNODE_STATUS_FLAGS, CM_DISABLE_PERSIST, CM_DISABLE_UI_NOT_OK, CM_DRP_CLASS,
+    CM_DRP_DEVICEDESC, CM_DRP_FRIENDLYNAME, CM_DRP_MFG, CM_Disable_DevNode, CM_Enable_DevNode,
     CM_Get_DevNode_PropertyW, CM_Get_DevNode_Registry_PropertyW, CM_Get_DevNode_Status,
     CM_Get_Device_IDW, CM_Get_Parent, CM_LOCATE_DEVNODE_FLAGS, CM_LOCATE_DEVNODE_NORMAL,
     CM_LOCATE_DEVNODE_PHANTOM, CM_Locate_DevNodeW, CM_MapCrToWin32Err, CM_PROB, CONFIGRET,
-    CR_BUFFER_SMALL, CR_NO_SUCH_DEVNODE, CR_SUCCESS, DI_NEEDREBOOT, DI_NEEDRESTART, DICS_DISABLE,
-    DICS_ENABLE, DICS_FLAG_CONFIGSPECIFIC, DICS_FLAG_GLOBAL, DIF_PROPERTYCHANGE, DIGCF_ALLCLASSES,
-    DIGCF_PRESENT, DN_DISABLEABLE, DN_HAS_PROBLEM, HDEVINFO, MAX_DEVICE_ID_LEN,
-    SETUP_DI_PROPERTY_CHANGE_SCOPE, SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA,
-    SP_DEVINSTALL_PARAMS_W, SP_PROPCHANGE_PARAMS, SetupDiCallClassInstaller,
-    SetupDiCreateDeviceInfoList, SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo,
-    SetupDiGetClassDevsW, SetupDiGetDeviceInstallParamsW, SetupDiOpenDeviceInfoW,
-    SetupDiSetClassInstallParamsW,
+    CR_BUFFER_SMALL, CR_NO_SUCH_DEVNODE, CR_NOT_DISABLEABLE, CR_REMOVE_VETOED, CR_SUCCESS,
+    DI_NEEDREBOOT, DI_NEEDRESTART, DICS_DISABLE, DICS_ENABLE, DICS_FLAG_CONFIGSPECIFIC,
+    DICS_FLAG_GLOBAL, DIF_PROPERTYCHANGE, DIGCF_ALLCLASSES, DIGCF_PRESENT, DN_DISABLEABLE,
+    DN_HAS_PROBLEM, HDEVINFO, MAX_DEVICE_ID_LEN, SETUP_DI_PROPERTY_CHANGE_SCOPE,
+    SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA, SP_DEVINSTALL_PARAMS_W, SP_PROPCHANGE_PARAMS,
+    SetupDiCallClassInstaller, SetupDiCreateDeviceInfoList, SetupDiDestroyDeviceInfoList,
+    SetupDiEnumDeviceInfo, SetupDiGetClassDevsW, SetupDiGetDeviceInstallParamsW,
+    SetupDiOpenDeviceInfoW, SetupDiSetClassInstallParamsW,
 };
 use windows::Win32::Devices::Properties::{
     DEVPKEY_Device_BusReportedDeviceDesc, DEVPKEY_Device_ContainerId, DEVPROP_TYPE_GUID,
@@ -98,9 +99,87 @@ pub fn find_device(instance_id: &str) -> Result<Option<DeviceInfo>, DeviceError>
     Ok(None)
 }
 
-/// Enable or disable a device the way Device Manager and `devcon` do
-/// (`DIF_PROPERTYCHANGE`), so the setting persists across restarts.
+/// Enable or disable a device the way `pnputil /enable-device` and
+/// `/disable-device` do (`CM_Enable_DevNode` / `CM_Disable_DevNode`, with
+/// the disable persisting across restarts).
+///
+/// SetupAPI's `DIF_PROPERTYCHANGE` (what `devcon` uses) was tried first, but
+/// for some devices, such as Bluetooth LE ones, it reports success without
+/// changing anything. It's kept as a fallback for enabling a device that
+/// `CM_Enable_DevNode` leaves disabled, e.g. one disabled that way or in
+/// Device Manager.
 pub fn set_device_enabled(instance_id: &str, enable: bool) -> Result<ChangeOutcome, DeviceError> {
+    let instance_id = instance_id.trim();
+    let verb = if enable { "Enabling" } else { "Disabling" };
+    let context = format!("{verb} {instance_id}");
+
+    let devinst = match locate(instance_id, CM_LOCATE_DEVNODE_NORMAL) {
+        Ok(devinst) => devinst,
+        Err(cr) if cr == CR_NO_SUCH_DEVNODE => {
+            return Err(DeviceError::with_context(
+                context,
+                "The device isn't connected.",
+            ));
+        }
+        Err(cr) => return Err(cr_error(&context, cr)),
+    };
+
+    let cr = unsafe {
+        if enable {
+            CM_Enable_DevNode(devinst, 0)
+        } else {
+            CM_Disable_DevNode(devinst, CM_DISABLE_UI_NOT_OK | CM_DISABLE_PERSIST)
+        }
+    };
+    match cr {
+        CR_SUCCESS => {}
+        CR_REMOVE_VETOED => {
+            return Err(DeviceError::with_context(
+                context,
+                "Something is using the device, so Windows wouldn't stop it. \
+                 Close whatever is using it (or restart) and try again.",
+            ));
+        }
+        CR_NOT_DISABLEABLE => {
+            return Err(DeviceError::with_context(
+                context,
+                "Windows doesn't allow this device to be disabled.",
+            ));
+        }
+        cr => return Err(cr_error(&context, cr)),
+    }
+
+    let (problem, _) = devnode_status(devinst).unwrap_or((problem::NONE, false));
+    if enable && problem == problem::DISABLED {
+        return set_device_enabled_setupapi(instance_id, true);
+    }
+    Ok(ChangeOutcome {
+        restart_required: problem == problem::RESTART_REQUIRED,
+    })
+}
+
+/// Problem code and `DN_DISABLEABLE` for a present devnode.
+fn devnode_status(devinst: u32) -> Result<(u32, bool), CONFIGRET> {
+    let mut status = CM_DEVNODE_STATUS_FLAGS(0);
+    let mut code = CM_PROB(0);
+    let cr = unsafe { CM_Get_DevNode_Status(&mut status, &mut code, devinst, 0) };
+    if cr != CR_SUCCESS {
+        return Err(cr);
+    }
+    let problem = if status.contains(DN_HAS_PROBLEM) {
+        code.0
+    } else {
+        problem::NONE
+    };
+    Ok((problem, status.contains(DN_DISABLEABLE)))
+}
+
+/// Enable or disable through SetupAPI (`DIF_PROPERTYCHANGE`), as `devcon`
+/// does; see [`set_device_enabled`] for when this is used.
+fn set_device_enabled_setupapi(
+    instance_id: &str,
+    enable: bool,
+) -> Result<ChangeOutcome, DeviceError> {
     let verb = if enable { "Enabling" } else { "Disabling" };
     let context = format!("{verb} {}", instance_id.trim());
     let fail = |err: windows::core::Error| win_error(&context, &err);
@@ -185,18 +264,8 @@ fn describe_devnode(devinst: u32, phantom: bool) -> Result<DeviceInfo, DeviceErr
     let (problem, can_disable) = if phantom {
         (problem::NOT_CONNECTED, false)
     } else {
-        let mut status = CM_DEVNODE_STATUS_FLAGS(0);
-        let mut code = CM_PROB(0);
-        let cr = unsafe { CM_Get_DevNode_Status(&mut status, &mut code, devinst, 0) };
-        if cr != CR_SUCCESS {
-            return Err(cr_error(&format!("Reading status of {instance_id}"), cr));
-        }
-        let problem = if status.contains(DN_HAS_PROBLEM) {
-            code.0
-        } else {
-            problem::NONE
-        };
-        (problem, status.contains(DN_DISABLEABLE))
+        devnode_status(devinst)
+            .map_err(|cr| cr_error(&format!("Reading status of {instance_id}"), cr))?
     };
 
     let kind = string_property(devinst, CM_DRP_DEVICEDESC);

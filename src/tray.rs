@@ -27,8 +27,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
     AppendMenuW, ChangeWindowMessageFilterEx, CreatePopupMenu, CreateWindowExW, DefWindowProcW,
     DestroyMenu, DestroyWindow, DispatchMessageW, EnumWindows, FindWindowW, GetCursorPos,
     GetMessageW, GetSystemMetrics, GetWindowThreadProcessId, HICON, IMAGE_ICON, IsIconic,
-    IsWindowVisible, LR_DEFAULTCOLOR, LoadImageW, MF_GRAYED, MF_SEPARATOR, MF_STRING, MSG,
-    MSGFLT_ALLOW, PostMessageW, PostQuitMessage, RegisterClassExW, RegisterWindowMessageW,
+    IsWindowVisible, KillTimer, LR_DEFAULTCOLOR, LoadImageW, MF_GRAYED, MF_SEPARATOR, MF_STRING,
+    MSG, MSGFLT_ALLOW, PostMessageW, PostQuitMessage, RegisterClassExW, RegisterWindowMessageW,
     SM_CXSMICON, SM_CYSMICON, SW_RESTORE, SW_SHOWNORMAL, SetForegroundWindow, SetMenuDefaultItem,
     SetTimer, ShowWindow, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu,
     TranslateMessage, WM_APP, WM_CONTEXTMENU, WM_DESTROY, WM_LBUTTONUP, WM_NULL, WM_RBUTTONUP,
@@ -59,6 +59,10 @@ const TRAY_ICON_ID: u32 = 1;
 /// elsewhere (Device Manager, unplugging, sleep).
 const POLL_TIMER_ID: usize = 1;
 const POLL_INTERVAL_MS: u32 = 10_000;
+/// One-off re-check shortly after a toggle, for devices whose state settles
+/// a moment after Windows returns.
+const SETTLE_TIMER_ID: usize = 2;
+const SETTLE_DELAY_MS: u32 = 1_500;
 
 const MENU_REVEAL: usize = 1;
 const MENU_CONFIGURE: usize = 2;
@@ -261,6 +265,7 @@ impl Tray {
         if let Some(message) = &report.done {
             logging::info(message);
         }
+        unsafe { SetTimer(Some(self.hwnd), SETTLE_TIMER_ID, SETTLE_DELAY_MS, None) };
         if let Some(state) = report.state {
             self.set_state(state);
         }
@@ -347,6 +352,11 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             LRESULT(0)
         }
         WM_TIMER if wparam.0 == POLL_TIMER_ID => {
+            with_tray(Tray::refresh);
+            LRESULT(0)
+        }
+        WM_TIMER if wparam.0 == SETTLE_TIMER_ID => {
+            let _ = unsafe { KillTimer(Some(hwnd), SETTLE_TIMER_ID) };
             with_tray(Tray::refresh);
             LRESULT(0)
         }

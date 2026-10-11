@@ -249,6 +249,40 @@ pub fn toggle(backend: &dyn DeviceBackend, configured: Option<&str>) -> ToggleRe
         Ok(outcome) => {
             let pending_restart = outcome.restart_required
                 || matches!(&state, Some(DeviceState::Device(d)) if d.problem == problem::RESTART_REQUIRED);
+
+            // Don't take "success" on trust: some devices accept the request
+            // and stay exactly as they were. Say so instead of pretending.
+            let expected = match action {
+                Action::Enable => problem::NONE,
+                Action::Disable => problem::DISABLED,
+            };
+            let unchanged = !pending_restart
+                && matches!(&state, Some(DeviceState::Device(d)) if d.problem != expected);
+            if unchanged {
+                let still = match action {
+                    Action::Enable => "disabled",
+                    Action::Disable => "enabled",
+                };
+                return ToggleReport {
+                    notice: Some(Notice::new(
+                        NoticeKind::Warning,
+                        format!("Couldn't {} device", action.verb()),
+                        format!(
+                            "Windows accepted the request, but {} is still {still}. \
+                             Try choosing a different device in Configure.",
+                            info.display_name()
+                        ),
+                    )),
+                    log: Some(format!(
+                        "{} {} reported success but the device is still {still}",
+                        action.verb(),
+                        info.instance_id
+                    )),
+                    state,
+                    done: None,
+                };
+            }
+
             ToggleReport {
                 notice: pending_restart.then(|| {
                     Notice::new(
@@ -288,6 +322,9 @@ mod tests {
         find_error: Option<DeviceError>,
         set_error: Option<DeviceError>,
         restart_required: bool,
+        /// Report success without changing anything (as some Bluetooth LE
+        /// devices did with SetupAPI).
+        no_effect: bool,
         calls: RefCell<Vec<(String, bool)>>,
     }
 
@@ -335,7 +372,9 @@ mod tests {
             if let Some(err) = &self.set_error {
                 return Err(err.clone());
             }
-            if let Some(device) = self.device.borrow_mut().as_mut() {
+            if let Some(device) = self.device.borrow_mut().as_mut()
+                && !self.no_effect
+            {
                 device.problem = if enable {
                     problem::NONE
                 } else {
@@ -450,6 +489,36 @@ mod tests {
         assert_eq!(report.notice.unwrap().kind, NoticeKind::Error);
         assert!(report.log.is_some());
         assert!(backend.calls.borrow().is_empty());
+    }
+
+    #[test]
+    fn success_without_a_state_change_is_reported_not_trusted() {
+        let backend = FakeBackend {
+            no_effect: true,
+            ..FakeBackend::with_problem(problem::NONE)
+        };
+        let report = toggle(&backend, Some(ID));
+        let notice = report.notice.unwrap();
+        assert_eq!(notice.kind, NoticeKind::Warning);
+        assert_eq!(notice.title, "Couldn't disable device");
+        assert!(
+            notice.text.contains("Touch screen is still enabled"),
+            "{}",
+            notice.text
+        );
+        assert!(report.log.unwrap().contains("still enabled"));
+        assert_eq!(report.done, None);
+        // The icon keeps showing the real (unchanged) state.
+        assert!(
+            matches!(report.state, Some(DeviceState::Device(ref d)) if d.problem == problem::NONE)
+        );
+
+        let backend = FakeBackend {
+            no_effect: true,
+            ..FakeBackend::with_problem(problem::DISABLED)
+        };
+        let notice = toggle(&backend, Some(ID)).notice.unwrap();
+        assert!(notice.text.contains("still disabled"), "{}", notice.text);
     }
 
     #[test]
