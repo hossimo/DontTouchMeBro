@@ -1,6 +1,7 @@
 //! Filtering and ordering the device list shown in the Configure window, and
 //! where to put that window.
 
+use crate::naming;
 use crate::status::{DeviceInfo, problem};
 
 /// Setup class shown by default; touch screens and pens live here.
@@ -40,13 +41,26 @@ pub fn visible_devices<'a>(
 
 fn matches(device: &DeviceInfo, query: &str) -> bool {
     [
+        &device.product_name,
         &device.description,
+        &device.kind,
         &device.manufacturer,
         &device.class,
         &device.instance_id,
     ]
     .iter()
     .any(|field| field.to_lowercase().contains(query))
+}
+
+/// Text for the Type column: what kind of device Windows says this is,
+/// shortened ("Consumer control" for "HID-compliant consumer control device").
+pub fn type_text(device: &DeviceInfo) -> String {
+    let kind = if device.kind.is_empty() {
+        &device.description
+    } else {
+        &device.kind
+    };
+    naming::function_label(kind)
 }
 
 /// Whether the tray could toggle this device. A working device Windows
@@ -98,6 +112,7 @@ mod tests {
             class: class.into(),
             problem: 0,
             can_disable: true,
+            ..Default::default()
         }
     }
 
@@ -167,6 +182,50 @@ mod tests {
             ["USB Root Hub"]
         );
         assert!(visible_devices(&devices, false, "usb").is_empty());
+    }
+
+    #[test]
+    fn product_names_are_shown_sorted_and_searchable() {
+        let mut keyboard = device(
+            "HIDClass",
+            "HID-compliant consumer control device",
+            r"HID\KEY\1",
+        );
+        keyboard.product_name = "Keychron Q6 HE".into();
+        keyboard.kind = "HID-compliant consumer control device".into();
+        let mut mouse = device("HIDClass", "Razer DeathAdder V2", r"HID\MOUSE\1");
+        mouse.product_name = "Razer DeathAdder V2".into();
+        mouse.kind = "USB Input Device".into();
+        let plain = device("HIDClass", "HID-compliant touch screen", r"HID\TOUCH\1");
+        let devices = vec![mouse, plain, keyboard];
+
+        let visible = visible_devices(&devices, false, "");
+        let shown: Vec<_> = visible.iter().map(|d| d.display_name()).collect();
+        assert_eq!(
+            shown,
+            [
+                "HID-compliant touch screen",
+                "Keychron Q6 HE",
+                "Razer DeathAdder V2"
+            ]
+        );
+
+        // Searchable by product name and by the Windows name.
+        assert_eq!(visible_devices(&devices, false, "keychron").len(), 1);
+        assert_eq!(
+            visible_devices(&devices, false, "consumer control").len(),
+            1
+        );
+    }
+
+    #[test]
+    fn type_text_shortens_the_windows_kind() {
+        let mut d = device("HIDClass", "Keychron Q6 HE", r"HID\KEY\1");
+        d.kind = "HID-compliant consumer control device".into();
+        assert_eq!(type_text(&d), "Consumer control");
+        // No kind: fall back to the description.
+        let d = device("HIDClass", "HID-compliant touch screen", r"HID\TOUCH\1");
+        assert_eq!(type_text(&d), "Touch screen");
     }
 
     #[test]

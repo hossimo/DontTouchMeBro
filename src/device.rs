@@ -6,11 +6,11 @@
 
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
     CM_DEVNODE_STATUS_FLAGS, CM_DRP_CLASS, CM_DRP_DEVICEDESC, CM_DRP_FRIENDLYNAME, CM_DRP_MFG,
-    CM_Get_DevNode_Registry_PropertyW, CM_Get_DevNode_Status, CM_Get_Device_IDW,
-    CM_LOCATE_DEVNODE_FLAGS, CM_LOCATE_DEVNODE_NORMAL, CM_LOCATE_DEVNODE_PHANTOM,
-    CM_Locate_DevNodeW, CM_MapCrToWin32Err, CM_PROB, CONFIGRET, CR_BUFFER_SMALL,
-    CR_NO_SUCH_DEVNODE, CR_SUCCESS, DI_NEEDREBOOT, DI_NEEDRESTART, DICS_DISABLE, DICS_ENABLE,
-    DICS_FLAG_CONFIGSPECIFIC, DICS_FLAG_GLOBAL, DIF_PROPERTYCHANGE, DIGCF_ALLCLASSES,
+    CM_Get_DevNode_PropertyW, CM_Get_DevNode_Registry_PropertyW, CM_Get_DevNode_Status,
+    CM_Get_Device_IDW, CM_Get_Parent, CM_LOCATE_DEVNODE_FLAGS, CM_LOCATE_DEVNODE_NORMAL,
+    CM_LOCATE_DEVNODE_PHANTOM, CM_Locate_DevNodeW, CM_MapCrToWin32Err, CM_PROB, CONFIGRET,
+    CR_BUFFER_SMALL, CR_NO_SUCH_DEVNODE, CR_SUCCESS, DI_NEEDREBOOT, DI_NEEDRESTART, DICS_DISABLE,
+    DICS_ENABLE, DICS_FLAG_CONFIGSPECIFIC, DICS_FLAG_GLOBAL, DIF_PROPERTYCHANGE, DIGCF_ALLCLASSES,
     DIGCF_PRESENT, DN_DISABLEABLE, DN_HAS_PROBLEM, HDEVINFO, MAX_DEVICE_ID_LEN,
     SETUP_DI_PROPERTY_CHANGE_SCOPE, SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA,
     SP_DEVINSTALL_PARAMS_W, SP_PROPCHANGE_PARAMS, SetupDiCallClassInstaller,
@@ -18,11 +18,17 @@ use windows::Win32::Devices::DeviceAndDriverInstallation::{
     SetupDiGetClassDevsW, SetupDiGetDeviceInstallParamsW, SetupDiOpenDeviceInfoW,
     SetupDiSetClassInstallParamsW,
 };
-use windows::Win32::Foundation::{
-    ERROR_IN_WOW64, ERROR_NO_MORE_ITEMS, ERROR_NO_SUCH_DEVINST, ERROR_NOT_DISABLEABLE, WIN32_ERROR,
+use windows::Win32::Devices::Properties::{
+    DEVPKEY_Device_BusReportedDeviceDesc, DEVPKEY_Device_ContainerId, DEVPROP_TYPE_GUID,
+    DEVPROP_TYPE_STRING, DEVPROPTYPE,
 };
-use windows::core::PCWSTR;
+use windows::Win32::Foundation::{
+    DEVPROPKEY, ERROR_IN_WOW64, ERROR_NO_MORE_ITEMS, ERROR_NO_SUCH_DEVINST, ERROR_NOT_DISABLEABLE,
+    WIN32_ERROR,
+};
+use windows::core::{GUID, PCWSTR};
 
+use crate::naming::{self, NodeNames};
 use crate::status::{DeviceInfo, problem};
 use crate::toggle::{ChangeOutcome, DeviceBackend, DeviceError};
 use crate::win::wide;
@@ -193,20 +199,140 @@ fn describe_devnode(devinst: u32, phantom: bool) -> Result<DeviceInfo, DeviceErr
         (problem, status.contains(DN_DISABLEABLE))
     };
 
-    // Prefer the friendly name Device Manager shows, if the device has one.
-    let mut description = string_property(devinst, CM_DRP_FRIENDLYNAME);
-    if description.is_empty() {
-        description = string_property(devinst, CM_DRP_DEVICEDESC);
-    }
+    let kind = string_property(devinst, CM_DRP_DEVICEDESC);
+    let (chain, has_container) = ancestry(devinst);
+    let product_name = naming::product_name(&chain, has_container).unwrap_or_default();
 
     Ok(DeviceInfo {
         instance_id,
-        description,
+        // The name Device Manager shows.
+        description: node_name(devinst),
+        product_name,
+        kind,
         manufacturer: string_property(devinst, CM_DRP_MFG),
         class: string_property(devinst, CM_DRP_CLASS),
         problem,
         can_disable,
     })
+}
+
+/// Friendly name, or the driver's description if there isn't one.
+fn node_name(devinst: u32) -> String {
+    let name = string_property(devinst, CM_DRP_FRIENDLYNAME);
+    if name.is_empty() {
+        string_property(devinst, CM_DRP_DEVICEDESC)
+    } else {
+        name
+    }
+}
+
+/// Device-tree nodes that are system buses rather than parts of a product;
+/// the walk up from a device stops before reaching them.
+const SYSTEM_ENUMERATORS: [&str; 6] = [
+    "PCI\\",
+    "ACPI\\",
+    "ACPI_HAL\\",
+    "HTREE\\",
+    "UEFI\\",
+    "SWD\\",
+];
+
+/// "No container": internal and system devices share this container ID.
+const NO_CONTAINER: GUID = GUID::from_u128(0x00000000_0000_0000_ffff_ffffffffffff);
+
+/// The names of a device and its ancestors, for [`naming::product_name`],
+/// and whether the device has a real device container.
+///
+/// The walk stays inside the device's container (one physical product), or
+/// for devices without one, goes up a few levels; either way it stops
+/// before system buses such as PCI or ACPI.
+fn ancestry(devinst: u32) -> (Vec<NodeNames>, bool) {
+    let container =
+        guid_property(devinst, &DEVPKEY_Device_ContainerId).filter(|c| *c != NO_CONTAINER);
+    let max_depth = if container.is_some() { 8 } else { 3 };
+
+    let mut chain = Vec::new();
+    let mut node = devinst;
+    for depth in 0..=max_depth {
+        chain.push(NodeNames {
+            name: node_name(node),
+            bus_name: string_devprop(node, &DEVPKEY_Device_BusReportedDeviceDesc),
+        });
+        if depth == max_depth {
+            break;
+        }
+
+        let mut parent = 0;
+        if unsafe { CM_Get_Parent(&mut parent, node, 0) } != CR_SUCCESS {
+            break;
+        }
+        let parent_id = device_id(parent).to_uppercase();
+        if parent_id.is_empty()
+            || SYSTEM_ENUMERATORS
+                .iter()
+                .any(|prefix| parent_id.starts_with(prefix))
+        {
+            break;
+        }
+        if container.is_some() && guid_property(parent, &DEVPKEY_Device_ContainerId) != container {
+            break;
+        }
+        node = parent;
+    }
+    (chain, container.is_some())
+}
+
+fn device_id(devinst: u32) -> String {
+    let mut id = [0u16; MAX_DEVICE_ID_LEN as usize + 1];
+    if unsafe { CM_Get_Device_IDW(devinst, &mut id, 0) } == CR_SUCCESS {
+        from_wide(&id)
+    } else {
+        String::new()
+    }
+}
+
+/// A string device property (`DEVPKEY_*`), or empty if it isn't set.
+fn string_devprop(devinst: u32, key: &DEVPROPKEY) -> String {
+    let mut buffer = vec![0u16; 128];
+    loop {
+        let mut kind = DEVPROPTYPE(0);
+        let mut bytes = (buffer.len() * 2) as u32;
+        let cr = unsafe {
+            CM_Get_DevNode_PropertyW(
+                devinst,
+                key,
+                &mut kind,
+                Some(buffer.as_mut_ptr().cast()),
+                &mut bytes,
+                0,
+            )
+        };
+        match cr {
+            CR_SUCCESS if kind == DEVPROP_TYPE_STRING => {
+                return from_wide(&buffer[..(bytes as usize / 2).min(buffer.len())]);
+            }
+            CR_BUFFER_SMALL => buffer.resize((bytes as usize).div_ceil(2) + 1, 0),
+            _ => return String::new(),
+        }
+    }
+}
+
+/// A GUID device property, or `None` if it isn't set.
+fn guid_property(devinst: u32, key: &DEVPROPKEY) -> Option<GUID> {
+    let mut guid = GUID::zeroed();
+    let mut kind = DEVPROPTYPE(0);
+    let mut bytes = size_of::<GUID>() as u32;
+    let cr = unsafe {
+        CM_Get_DevNode_PropertyW(
+            devinst,
+            key,
+            &mut kind,
+            Some((&mut guid as *mut GUID).cast()),
+            &mut bytes,
+            0,
+        )
+    };
+    (cr == CR_SUCCESS && kind == DEVPROP_TYPE_GUID).then_some(guid)
 }
 
 /// A string registry property of a devnode, or empty if it has none.

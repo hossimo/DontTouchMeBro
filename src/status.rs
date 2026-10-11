@@ -58,7 +58,17 @@ pub fn describe_problem(code: u32) -> String {
 pub struct DeviceInfo {
     /// Device Instance Path, e.g. `HID\ELAN2D25&COL01\5&2B77D6B&0&0000`.
     pub instance_id: String,
+    /// The name Device Manager shows: the friendly name, or the driver's
+    /// description if there isn't one.
     pub description: String,
+    /// The product this device belongs to, e.g. "Keychron Q6 HE" for one of
+    /// its "HID-compliant consumer control device" functions. Empty if no
+    /// better name than [`Self::description`] was found; see
+    /// [`crate::naming`].
+    pub product_name: String,
+    /// The driver's description of what kind of device this is, e.g.
+    /// "HID-compliant consumer control device".
+    pub kind: String,
     pub manufacturer: String,
     /// Setup class name, e.g. `HIDClass`.
     pub class: String,
@@ -70,13 +80,13 @@ pub struct DeviceInfo {
 }
 
 impl DeviceInfo {
-    /// Description, falling back to the instance ID when the device has none.
+    /// The most recognisable name: the product name, then the description,
+    /// then the instance ID.
     pub fn display_name(&self) -> &str {
-        if self.description.is_empty() {
-            &self.instance_id
-        } else {
-            &self.description
-        }
+        [&self.product_name, &self.description]
+            .into_iter()
+            .find(|name| !name.is_empty())
+            .unwrap_or(&self.instance_id)
     }
 }
 
@@ -156,6 +166,7 @@ mod tests {
             class: "HIDClass".into(),
             problem,
             can_disable: true,
+            ..Default::default()
         }
     }
 

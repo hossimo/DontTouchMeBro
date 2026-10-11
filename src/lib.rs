@@ -14,6 +14,7 @@ pub mod configure;
 pub mod device;
 pub mod listing;
 pub mod logging;
+pub mod naming;
 pub mod status;
 pub mod toggle;
 pub mod tray;

@@ -268,6 +268,7 @@ mod tests {
                     class: "HIDClass".into(),
                     problem,
                     can_disable: true,
+                    ..Default::default()
                 })),
                 ..Default::default()
             }

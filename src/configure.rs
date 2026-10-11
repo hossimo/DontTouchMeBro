@@ -154,7 +154,7 @@ impl ConfigureApp {
         ui.add_space(6.0);
         ui.heading("Choose the device the tray icon enables and disables");
         ui.label(
-            "Touch screens are usually listed as \"HID-compliant touch screen\". \
+            "A touch screen has the type \"Touch screen\" (a pen, \"Pen\"). \
              Click a device to select it (its button fills in), then press OK.",
         );
         ui.add_space(4.0);
@@ -286,9 +286,9 @@ impl ConfigureApp {
         let row_height = ui.text_style_height(&egui::TextStyle::Body) + 6.0;
         // Widths are worked out from the current window size every frame
         // (and the columns aren't user-resizable, which would freeze them),
-        // so the table always fits the window: the description column takes
+        // so the table always fits the window: the name column takes
         // whatever the others leave.
-        let manufacturer_width = (ui.available_width() * 0.22).clamp(110.0, 260.0);
+        let type_width = (ui.available_width() * 0.24).clamp(120.0, 280.0);
         TableBuilder::new(ui)
             .striped(true)
             .resizable(false)
@@ -298,11 +298,11 @@ impl ConfigureApp {
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
             .column(Column::exact(28.0))
             .column(Column::remainder().at_least(120.0).clip(true))
-            .column(Column::exact(manufacturer_width).clip(true))
+            .column(Column::exact(type_width).clip(true))
             .column(Column::exact(110.0).clip(true))
             .column(Column::exact(150.0).clip(true))
             .header(row_height, |mut header| {
-                for title in ["", "Description", "Manufacturer", "Class", "Status"] {
+                for title in ["", "Name", "Type", "Class", "Status"] {
                     header.col(|ui| {
                         ui.strong(title);
                     });
@@ -327,7 +327,7 @@ impl ConfigureApp {
                         ui.label(device.display_name());
                     });
                     row.col(|ui| {
-                        ui.label(&device.manufacturer);
+                        ui.label(listing::type_text(device));
                     });
                     row.col(|ui| {
                         ui.label(&device.class);
@@ -335,8 +335,14 @@ impl ConfigureApp {
                     row.col(|ui| {
                         ui.label(describe_problem(device.problem));
                     });
-                    // Full name (it may be cut short) and the instance ID.
-                    let tooltip = format!("{}\n{}", device.display_name(), device.instance_id);
+                    // Full name (it may be cut short), what Windows calls it,
+                    // and the instance ID.
+                    let tooltip = format!(
+                        "{}\nWindows name: {}\n{}",
+                        device.display_name(),
+                        device.description,
+                        device.instance_id
+                    );
                     if row.response().on_hover_text(tooltip).clicked() {
                         clicked = Some(device.instance_id.clone());
                     }
@@ -460,6 +466,7 @@ mod tests {
             class: HID_CLASS.into(),
             problem: 0,
             can_disable: true,
+            ..Default::default()
         }
     }
 
@@ -505,8 +512,8 @@ mod tests {
         let temp = tempfile::tempdir().unwrap();
         let mut harness = harness(temp.path());
 
-        // Rows are sorted by description: pen first, then the touch screen.
-        harness.get_all_by_label("ELAN").nth(1).unwrap().click();
+        // The Type column ("HID-compliant touch screen" shortened).
+        harness.get_by_label("Touch screen").click();
         harness.run();
         assert_eq!(harness.state().selected.as_deref(), Some(TOUCH));
     }
