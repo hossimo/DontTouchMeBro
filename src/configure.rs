@@ -31,7 +31,8 @@ pub fn run() -> Result<(), String> {
     let mut viewport = egui::ViewportBuilder::default()
         .with_title(&title)
         .with_inner_size(WINDOW_SIZE)
-        .with_min_inner_size([560.0, 320.0])
+        // Tall enough for the header, footer and a few rows of the list.
+        .with_min_inner_size([600.0, 440.0])
         .with_icon(Arc::new(egui::IconData {
             rgba: WINDOW_ICON.to_vec(),
             width: 64,
@@ -215,11 +216,13 @@ impl ConfigureApp {
         ui.horizontal(|ui| {
             ui.weak(format!("Version {}", env!("CARGO_PKG_VERSION")));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Cancel").clicked() {
+                if ui.add(dialog_button("Cancel")).clicked() {
                     ctx.send_viewport_cmd(ViewportCommand::Close);
                 }
+                // Stays blue (just dimmed) until a device is selected, so it's
+                // always easy to find.
                 if ui
-                    .add_enabled(self.selected.is_some(), egui::Button::new("OK"))
+                    .add_enabled(self.selected.is_some(), dialog_button("OK"))
                     .on_disabled_hover_text("Select a device first")
                     .clicked()
                 {
@@ -357,10 +360,21 @@ impl ConfigureApp {
             self.save(&ctx);
         }
 
-        egui::Panel::top("header").show(ui, |ui| self.header(ui, &ctx));
+        // The footer is laid out first so it always gets its space: OK and
+        // Cancel stay visible however small the window is, and the header
+        // and list give way instead.
         egui::Panel::bottom("footer").show(ui, |ui| self.footer(ui, &ctx));
+        egui::Panel::top("header").show(ui, |ui| self.header(ui, &ctx));
         egui::CentralPanel::default().show(ui, |ui| self.device_table(ui, &ctx));
     }
+}
+
+/// The blue OK / Cancel buttons: larger than egui's default and filled, so
+/// they stand out against the dark theme.
+fn dialog_button(text: &str) -> egui::Button<'static> {
+    egui::Button::new(RichText::new(text).color(Color32::WHITE).strong())
+        .fill(Color32::from_rgb(0, 103, 192))
+        .min_size(egui::vec2(88.0, 30.0))
 }
 
 /// List devices on a background thread so the window opens immediately.
