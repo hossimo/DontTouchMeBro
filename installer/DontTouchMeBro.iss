@@ -13,7 +13,7 @@
 ; so there is no UAC prompt at every logon. (The HKCU\...\Run key can't be used:
 ; Windows silently skips requireAdministrator apps listed there.)
 ;
-; Prereq: run build.ps1 first so the published exe exists at
+; Prereq: run build.ps1 first so the built exe exists at
 ;   ..\dist\win-x64\DontTouchMeBro.exe
 ;
 ; Compile:

@@ -1,0 +1,4 @@
+# Raw image data must never get line-ending conversion.
+*.rgba binary
+*.ico binary
+*.png binary

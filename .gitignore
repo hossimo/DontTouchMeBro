@@ -362,3 +362,6 @@ installer/Output/
 CLAUDE.md
 REVIEW.md
 .claude/
+
+# Rust build output
+/target/
