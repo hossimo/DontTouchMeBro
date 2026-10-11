@@ -177,26 +177,35 @@ impl ConfigureApp {
         ui.add_space(6.0);
     }
 
-    fn footer(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+    /// What's selected, plus any warning or error. Every line here wraps or
+    /// truncates, so nothing in it can make the window wider than it is.
+    fn selection_info(&mut self, ui: &mut egui::Ui) {
         ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.label("Selected device:");
             match &self.selected {
+                // Instance IDs can be very long (Bluetooth ones especially):
+                // cut them short with "…" and show the whole ID on hover.
                 Some(id) => {
-                    ui.add(egui::Label::new(RichText::new(id).monospace()).selectable(true));
-                    if let Devices::Loaded(devices) = &self.devices
-                        && !devices
-                            .iter()
-                            .any(|d| listing::same_device(&d.instance_id, id))
-                    {
-                        ui.weak("(not currently connected)");
-                    }
+                    ui.add(
+                        egui::Label::new(RichText::new(id).monospace())
+                            .truncate()
+                            .selectable(true),
+                    )
+                    .on_hover_text(id);
                 }
                 None => {
                     ui.weak("None");
                 }
             }
         });
+        if let (Devices::Loaded(devices), Some(id)) = (&self.devices, &self.selected)
+            && !devices
+                .iter()
+                .any(|d| listing::same_device(&d.instance_id, id))
+        {
+            ui.weak("This device isn't currently connected.");
+        }
         // Such devices are hidden from the list, but one may already be
         // saved in the config (as chosen with an older version).
         if self
@@ -213,6 +222,13 @@ impl ConfigureApp {
             ui.colored_label(Color32::from_rgb(220, 50, 50), error);
         }
         ui.add_space(4.0);
+    }
+
+    /// OK / Cancel in a panel of their own along the bottom edge, so no other
+    /// content (a long device ID, a wrapped warning) can push them out of the
+    /// window.
+    fn button_bar(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
+        ui.add_space(6.0);
         ui.horizontal(|ui| {
             ui.weak(format!("Version {}", env!("CARGO_PKG_VERSION")));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -360,10 +376,14 @@ impl ConfigureApp {
             self.save(&ctx);
         }
 
-        // The footer is laid out first so it always gets its space: OK and
-        // Cancel stay visible however small the window is, and the header
-        // and list give way instead.
-        egui::Panel::bottom("footer").show(ui, |ui| self.footer(ui, &ctx));
+        // Panels laid out first get their space first. The button bar goes
+        // first, in a panel of its own along the bottom edge, so OK and
+        // Cancel stay in view whatever the window size or content; the
+        // selection info sits above it, and the header and list give way.
+        egui::Panel::bottom("buttons")
+            .show_separator_line(false)
+            .show(ui, |ui| self.button_bar(ui, &ctx));
+        egui::Panel::bottom("selection").show(ui, |ui| self.selection_info(ui));
         egui::Panel::top("header").show(ui, |ui| self.header(ui, &ctx));
         egui::CentralPanel::default().show(ui, |ui| self.device_table(ui, &ctx));
     }
@@ -554,6 +574,48 @@ mod tests {
         assert!(harness.query_by_label("HID-compliant pen").is_none());
         assert!(harness.query_by_label_contains(warning).is_some());
         assert_eq!(harness.state().selected.as_deref(), Some(PEN));
+    }
+
+    #[test]
+    fn buttons_stay_in_the_window_with_a_long_device_id() {
+        // A real Bluetooth instance ID; this one pushed OK and Cancel off the
+        // right edge of the window.
+        const BLUETOOTH: &str = r"HID\{00001812-0000-1000-8000-00805F9B34FB}_DEV_VID&02256F_PID&C63A_REV&0504_C87926DE2E1A&COL01\9&2A6E5C2C&0&0000";
+        let temp = tempfile::tempdir().unwrap();
+        let app = ConfigureApp {
+            config: Config::new(temp.path()),
+            devices: Devices::Loaded(vec![device(
+                BLUETOOTH,
+                "3Dconnexion SpaceMouse Wireless Bluetooth Edition",
+            )]),
+            show_all: false,
+            filter: String::new(),
+            selected: Some(BLUETOOTH.into()),
+            error: None,
+            revealed_selection: true,
+        };
+        // The narrowest the window can be.
+        let size = egui::vec2(600.0, 440.0);
+        let mut harness = Harness::builder()
+            .with_size(size)
+            .build_ui_state(|ui, app: &mut ConfigureApp| app.show(ui), app);
+        harness.run();
+
+        for label in ["OK", "Cancel"] {
+            let rect = harness.get_by_label(label).rect();
+            assert!(
+                rect.min.x >= 0.0 && rect.max.x <= size.x && rect.max.y <= size.y,
+                "{label} button at {rect:?} is outside the {size:?} window"
+            );
+        }
+
+        // And OK still works.
+        harness.get_by_label("OK").click();
+        harness.run();
+        assert_eq!(
+            Config::new(temp.path()).read().unwrap().as_deref(),
+            Some(BLUETOOTH)
+        );
     }
 
     #[test]
