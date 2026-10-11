@@ -16,7 +16,7 @@ use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 use crate::config::{self, Config};
 use crate::listing::{self, HID_CLASS, Rect};
-use crate::status::{APP_TITLE, DeviceInfo, problem};
+use crate::status::{APP_TITLE, DeviceInfo, describe_problem};
 use crate::{device, logging};
 
 const WINDOW_SIZE: egui::Vec2 = egui::vec2(780.0, 500.0);
@@ -196,9 +196,11 @@ impl ConfigureApp {
                 }
             }
         });
+        // Such devices are hidden from the list, but one may already be
+        // saved in the config (as chosen with an older version).
         if self
             .selected_device()
-            .is_some_and(|d| d.problem == problem::NONE && !d.can_disable)
+            .is_some_and(|d| !listing::can_toggle(d))
         {
             ui.colored_label(
                 Color32::from_rgb(230, 160, 40),
@@ -312,7 +314,7 @@ impl ConfigureApp {
                         ui.label(&device.class);
                     });
                     row.col(|ui| {
-                        ui.label(listing::status_text(device));
+                        ui.label(describe_problem(device.problem));
                     });
                     // Full name (it may be cut short) and the instance ID.
                     let tooltip = format!("{}\n{}", device.display_name(), device.instance_id);
@@ -503,7 +505,24 @@ mod tests {
     }
 
     #[test]
-    fn warns_when_the_selected_device_cannot_be_disabled() {
+    fn devices_that_cannot_be_disabled_are_hidden() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut harness = harness(temp.path());
+        if let Devices::Loaded(devices) = &mut harness.state_mut().devices {
+            devices[1].can_disable = false; // the pen
+        }
+        harness.run();
+
+        assert!(harness.query_by_label("HID-compliant pen").is_none());
+        assert!(
+            harness
+                .query_by_label("HID-compliant touch screen")
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn warns_when_the_saved_device_cannot_be_disabled() {
         let temp = tempfile::tempdir().unwrap();
         let mut harness = harness(temp.path());
         let warning = "Windows doesn't allow this device to be disabled";
@@ -512,12 +531,15 @@ mod tests {
         harness.run();
         assert!(harness.query_by_label_contains(warning).is_none());
 
+        // E.g. a device picked with an older version: hidden from the list,
+        // but still selected, so say why it won't work.
         if let Devices::Loaded(devices) = &mut harness.state_mut().devices {
             devices.iter_mut().for_each(|d| d.can_disable = false);
         }
         harness.run();
+        assert!(harness.query_by_label("HID-compliant pen").is_none());
         assert!(harness.query_by_label_contains(warning).is_some());
-        assert_eq!(harness.get_all_by_label("Can't be disabled").count(), 2);
+        assert_eq!(harness.state().selected.as_deref(), Some(PEN));
     }
 
     #[test]

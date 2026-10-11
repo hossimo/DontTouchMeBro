@@ -116,7 +116,9 @@ asks you to click **Yes**), none of this applies.
 The easiest way is to launch the app, right-click the tray icon and choose
 **Configure**. It lists your HID devices (touch screens and pens are usually
 "HID-compliant touch screen" / "HID-compliant pen"); tick **Show all device
-classes** to pick any other kind of device. Click a row, then **OK**. Your
+classes** to pick any other kind of device. Devices Windows won't let you
+disable (some virtual and system devices) aren't listed, since the app could
+never turn them off. Click a row, then **OK**. Your
 choice is saved to `%APPDATA%\DontTouchMeBro\device-id.txt`, and the tray
 picks it up straight away.
 
