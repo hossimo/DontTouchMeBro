@@ -275,7 +275,11 @@ namespace DontTouchMeBro
             if (string.IsNullOrWhiteSpace(selectedDeviceId))
                 return;
 
-            Program.SetDeviceID(selectedDeviceId);
+            // Keep the dialog open if the config couldn't be saved (SetDeviceID
+            // already told the user why), so they can retry or cancel.
+            if (!Program.SetDeviceID(selectedDeviceId))
+                return;
+
             this.Close();
         }
     }
