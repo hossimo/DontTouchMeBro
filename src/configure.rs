@@ -16,7 +16,7 @@ use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
 use crate::config::{self, Config};
 use crate::listing::{self, HID_CLASS, Rect};
-use crate::status::{APP_TITLE, DeviceInfo, describe_problem};
+use crate::status::{APP_TITLE, DeviceInfo, problem};
 use crate::{device, logging};
 
 const WINDOW_SIZE: egui::Vec2 = egui::vec2(780.0, 500.0);
@@ -121,6 +121,16 @@ impl ConfigureApp {
         }
     }
 
+    /// The selected device, if it's in the loaded list.
+    fn selected_device(&self) -> Option<&DeviceInfo> {
+        let (Devices::Loaded(devices), Some(id)) = (&self.devices, &self.selected) else {
+            return None;
+        };
+        devices
+            .iter()
+            .find(|d| listing::same_device(&d.instance_id, id))
+    }
+
     fn save(&mut self, ctx: &egui::Context) {
         let Some(id) = self.selected.clone() else {
             return;
@@ -186,6 +196,16 @@ impl ConfigureApp {
                 }
             }
         });
+        if self
+            .selected_device()
+            .is_some_and(|d| d.problem == problem::NONE && !d.can_disable)
+        {
+            ui.colored_label(
+                Color32::from_rgb(230, 160, 40),
+                "Windows doesn't allow this device to be disabled, so clicking the tray icon \
+                 won't turn it off. Pick another device.",
+            );
+        }
         if let Some(error) = &self.error {
             ui.colored_label(Color32::from_rgb(220, 50, 50), error);
         }
@@ -292,7 +312,7 @@ impl ConfigureApp {
                         ui.label(&device.class);
                     });
                     row.col(|ui| {
-                        ui.label(describe_problem(device.problem));
+                        ui.label(listing::status_text(device));
                     });
                     // Full name (it may be cut short) and the instance ID.
                     let tooltip = format!("{}\n{}", device.display_name(), device.instance_id);
@@ -403,6 +423,7 @@ mod tests {
             manufacturer: "ELAN".into(),
             class: HID_CLASS.into(),
             problem: 0,
+            can_disable: true,
         }
     }
 
@@ -479,6 +500,24 @@ mod tests {
         harness.get_by_label("HID-compliant pen").click();
         harness.run();
         assert_eq!(harness.state().selected, None);
+    }
+
+    #[test]
+    fn warns_when_the_selected_device_cannot_be_disabled() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut harness = harness(temp.path());
+        let warning = "Windows doesn't allow this device to be disabled";
+
+        harness.get_by_label("HID-compliant pen").click();
+        harness.run();
+        assert!(harness.query_by_label_contains(warning).is_none());
+
+        if let Devices::Loaded(devices) = &mut harness.state_mut().devices {
+            devices.iter_mut().for_each(|d| d.can_disable = false);
+        }
+        harness.run();
+        assert!(harness.query_by_label_contains(warning).is_some());
+        assert_eq!(harness.get_all_by_label("Can't be disabled").count(), 2);
     }
 
     #[test]

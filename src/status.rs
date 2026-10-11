@@ -64,6 +64,9 @@ pub struct DeviceInfo {
     pub class: String,
     /// Problem code; [`problem::NONE`] means enabled and working.
     pub problem: u32,
+    /// Whether Windows allows this device to be disabled (`DN_DISABLEABLE`).
+    /// Some devices, often virtual or system ones, can't be.
+    pub can_disable: bool,
 }
 
 impl DeviceInfo {
@@ -152,6 +155,7 @@ mod tests {
             manufacturer: "Microsoft".into(),
             class: "HIDClass".into(),
             problem,
+            can_disable: true,
         }
     }
 

@@ -38,6 +38,11 @@ pub fn debug(message: &str) {
 fn write_entry(level: &str, message: &str) {
     let line = format!("{} {level} {message}", timestamp());
     debug_output(&line);
+    // Unit tests exercise code that logs; keep them out of the real
+    // %APPDATA% log.
+    if cfg!(test) {
+        return;
+    }
     if let Some(dir) = config::default_dir()
         && let Err(err) = append(&dir, LOG_FILE_NAME, &line)
     {

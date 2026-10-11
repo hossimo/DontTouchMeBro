@@ -22,23 +22,39 @@ pub struct ChangeOutcome {
     pub restart_required: bool,
 }
 
-/// A failed device operation, with enough detail to log and show the user.
+/// A failed device operation. `reason` is short enough to show the user;
+/// the full message (for the log) adds what was being done.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeviceError {
-    pub message: String,
+    /// What was being attempted, e.g. `Disabling HID\...`; may be empty.
+    pub context: String,
+    /// Why it failed, e.g. `This device can't be disabled.`
+    pub reason: String,
 }
 
 impl DeviceError {
-    pub fn new(message: impl Into<String>) -> Self {
+    pub fn new(reason: impl Into<String>) -> Self {
         DeviceError {
-            message: message.into(),
+            context: String::new(),
+            reason: reason.into(),
+        }
+    }
+
+    pub fn with_context(context: impl Into<String>, reason: impl Into<String>) -> Self {
+        DeviceError {
+            context: context.into(),
+            reason: reason.into(),
         }
     }
 }
 
 impl fmt::Display for DeviceError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
+        if self.context.is_empty() {
+            f.write_str(&self.reason)
+        } else {
+            write!(f, "{}: {}", self.context, self.reason)
+        }
     }
 }
 
@@ -131,7 +147,7 @@ pub fn toggle(backend: &dyn DeviceBackend, configured: Option<&str>) -> ToggleRe
                 notice: Some(Notice::new(
                     NoticeKind::Error,
                     "Couldn't toggle device",
-                    err.message.clone(),
+                    err.reason.clone(),
                 )),
                 log: Some(format!(
                     "Querying device {}: {err}",
@@ -194,7 +210,7 @@ pub fn toggle(backend: &dyn DeviceBackend, configured: Option<&str>) -> ToggleRe
             notice: Some(Notice::new(
                 NoticeKind::Error,
                 format!("Failed to {} device", action.verb()),
-                format!("{}: {err}", info.display_name()),
+                format!("{}: {}", info.display_name(), err.reason),
             )),
             log: Some(format!(
                 "Failed to {} {}: {err}",
@@ -251,6 +267,7 @@ mod tests {
                     manufacturer: "ELAN".into(),
                     class: "HIDClass".into(),
                     problem,
+                    can_disable: true,
                 })),
                 ..Default::default()
             }

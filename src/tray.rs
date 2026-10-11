@@ -9,6 +9,7 @@
 use std::cell::RefCell;
 use std::path::Path;
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::{
     CloseHandle, ERROR_ALREADY_EXISTS, GetLastError, HANDLE, HINSTANCE, HWND, LPARAM, LRESULT,
@@ -16,6 +17,7 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::System::Threading::{CreateMutexW, ReleaseMutex};
+use windows::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime;
 use windows::Win32::UI::Shell::{
     NIF_ICON, NIF_INFO, NIF_MESSAGE, NIF_TIP, NIIF_ERROR, NIIF_INFO, NIIF_WARNING, NIM_ADD,
     NIM_DELETE, NIM_MODIFY, NOTIFY_ICON_DATA_FLAGS, NOTIFY_ICON_MESSAGE, NOTIFYICONDATAW,
@@ -126,6 +128,7 @@ pub fn run() -> Result<(), String> {
         state,
         backend,
         configure_pid: None,
+        last_toggle: None,
     };
     tray.add_icon();
     if tray.state == DeviceState::NotConfigured {
@@ -161,6 +164,8 @@ struct Tray {
     backend: SetupApi,
     /// Process ID of the open Configure window, if any.
     configure_pid: Option<u32>,
+    /// When the last click-to-toggle finished; see [`Tray::toggle`].
+    last_toggle: Option<Instant>,
 }
 
 impl Tray {
@@ -231,7 +236,20 @@ impl Tray {
     }
 
     fn toggle(&mut self) {
+        // A double-click delivers two button-up messages. Treat a click that
+        // lands within the double-click time of the last toggle as part of
+        // the same gesture, so a double-click doesn't flip the device off
+        // and straight back on.
+        let double_click = Duration::from_millis(unsafe { GetDoubleClickTime() }.into());
+        if self
+            .last_toggle
+            .is_some_and(|at| at.elapsed() < double_click)
+        {
+            return;
+        }
+
         let report = toggle::toggle(&self.backend, self.configured.as_deref());
+        self.last_toggle = Some(Instant::now());
         if let Some(message) = &report.log {
             logging::error(message);
         }

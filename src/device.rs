@@ -11,13 +11,16 @@ use windows::Win32::Devices::DeviceAndDriverInstallation::{
     CM_Locate_DevNodeW, CM_MapCrToWin32Err, CM_PROB, CONFIGRET, CR_BUFFER_SMALL,
     CR_NO_SUCH_DEVNODE, CR_SUCCESS, DI_NEEDREBOOT, DI_NEEDRESTART, DICS_DISABLE, DICS_ENABLE,
     DICS_FLAG_CONFIGSPECIFIC, DICS_FLAG_GLOBAL, DIF_PROPERTYCHANGE, DIGCF_ALLCLASSES,
-    DIGCF_PRESENT, DN_HAS_PROBLEM, HDEVINFO, MAX_DEVICE_ID_LEN, SETUP_DI_PROPERTY_CHANGE_SCOPE,
-    SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA, SP_DEVINSTALL_PARAMS_W, SP_PROPCHANGE_PARAMS,
-    SetupDiCallClassInstaller, SetupDiCreateDeviceInfoList, SetupDiDestroyDeviceInfoList,
-    SetupDiEnumDeviceInfo, SetupDiGetClassDevsW, SetupDiGetDeviceInstallParamsW,
-    SetupDiOpenDeviceInfoW, SetupDiSetClassInstallParamsW,
+    DIGCF_PRESENT, DN_DISABLEABLE, DN_HAS_PROBLEM, HDEVINFO, MAX_DEVICE_ID_LEN,
+    SETUP_DI_PROPERTY_CHANGE_SCOPE, SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA,
+    SP_DEVINSTALL_PARAMS_W, SP_PROPCHANGE_PARAMS, SetupDiCallClassInstaller,
+    SetupDiCreateDeviceInfoList, SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo,
+    SetupDiGetClassDevsW, SetupDiGetDeviceInstallParamsW, SetupDiOpenDeviceInfoW,
+    SetupDiSetClassInstallParamsW,
 };
-use windows::Win32::Foundation::{ERROR_NO_MORE_ITEMS, WIN32_ERROR};
+use windows::Win32::Foundation::{
+    ERROR_IN_WOW64, ERROR_NO_MORE_ITEMS, ERROR_NO_SUCH_DEVINST, ERROR_NOT_DISABLEABLE, WIN32_ERROR,
+};
 use windows::core::PCWSTR;
 
 use crate::status::{DeviceInfo, problem};
@@ -173,8 +176,8 @@ fn describe_devnode(devinst: u32, phantom: bool) -> Result<DeviceInfo, DeviceErr
     }
     let instance_id = from_wide(&id);
 
-    let problem = if phantom {
-        problem::NOT_CONNECTED
+    let (problem, can_disable) = if phantom {
+        (problem::NOT_CONNECTED, false)
     } else {
         let mut status = CM_DEVNODE_STATUS_FLAGS(0);
         let mut code = CM_PROB(0);
@@ -182,11 +185,12 @@ fn describe_devnode(devinst: u32, phantom: bool) -> Result<DeviceInfo, DeviceErr
         if cr != CR_SUCCESS {
             return Err(cr_error(&format!("Reading status of {instance_id}"), cr));
         }
-        if status.contains(DN_HAS_PROBLEM) {
+        let problem = if status.contains(DN_HAS_PROBLEM) {
             code.0
         } else {
             problem::NONE
-        }
+        };
+        (problem, status.contains(DN_DISABLEABLE))
     };
 
     // Prefer the friendly name Device Manager shows, if the device has one.
@@ -201,6 +205,7 @@ fn describe_devnode(devinst: u32, phantom: bool) -> Result<DeviceInfo, DeviceErr
         manufacturer: string_property(devinst, CM_DRP_MFG),
         class: string_property(devinst, CM_DRP_CLASS),
         problem,
+        can_disable,
     })
 }
 
@@ -233,18 +238,84 @@ fn from_wide(buffer: &[u16]) -> String {
 }
 
 fn win_error(context: &str, err: &windows::core::Error) -> DeviceError {
-    DeviceError::new(format!(
-        "{context}: {} (0x{:08X})",
-        err.message(),
-        err.code().0
-    ))
+    DeviceError::with_context(context, describe_error(err))
+}
+
+/// A readable message for a Windows error. SetupAPI's own errors
+/// (0xE000xxxx) aren't in the system message table, so `message()` is empty
+/// for them; spell out the ones users can actually hit.
+fn describe_error(err: &windows::core::Error) -> String {
+    let code = err.code().0 as u32;
+    let known = [
+        (
+            ERROR_NOT_DISABLEABLE,
+            "Windows doesn't allow this device to be disabled.",
+        ),
+        (ERROR_NO_SUCH_DEVINST, "The device no longer exists."),
+        (ERROR_IN_WOW64, "This needs the 64-bit version of the app."),
+    ];
+    if let Some((_, text)) = known.iter().find(|(known, _)| known.0 == code) {
+        return format!("{text} (0x{code:08X})");
+    }
+    match err.message().trim() {
+        "" => format!("Windows error 0x{code:08X}"),
+        message => format!("{message} (0x{code:08X})"),
+    }
 }
 
 fn cr_error(context: &str, cr: CONFIGRET) -> DeviceError {
     let code = unsafe { CM_MapCrToWin32Err(cr, 0) };
     if code == 0 {
-        return DeviceError::new(format!("{context}: Configuration Manager error {}", cr.0));
+        return DeviceError::with_context(context, format!("Configuration Manager error {}", cr.0));
     }
     let err = windows::core::Error::from(WIN32_ERROR(code).to_hresult());
-    DeviceError::new(format!("{context}: {} (CONFIGRET {})", err.message(), cr.0))
+    DeviceError::with_context(
+        context,
+        format!("{} (CONFIGRET {})", describe_error(&err), cr.0),
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn error(code: WIN32_ERROR) -> windows::core::Error {
+        windows::core::Error::from(code.to_hresult())
+    }
+
+    #[test]
+    fn setupapi_errors_get_readable_messages() {
+        // These have no system message text, so this used to log ": (0xE0000231)".
+        assert_eq!(
+            describe_error(&error(ERROR_NOT_DISABLEABLE)),
+            "Windows doesn't allow this device to be disabled. (0xE0000231)"
+        );
+        assert!(
+            describe_error(&error(ERROR_NO_SUCH_DEVINST))
+                .starts_with("The device no longer exists.")
+        );
+    }
+
+    #[test]
+    fn other_errors_use_the_system_message() {
+        let text = describe_error(&error(windows::Win32::Foundation::ERROR_ACCESS_DENIED));
+        assert!(text.ends_with("(0x80070005)"), "{text}");
+        assert!(text.len() > "(0x80070005)".len(), "{text}");
+    }
+
+    #[test]
+    fn device_error_keeps_context_for_the_log_only() {
+        let err = win_error(
+            r"Disabling ROOT\HIDCLASS\0000",
+            &error(ERROR_NOT_DISABLEABLE),
+        );
+        assert_eq!(
+            err.reason,
+            "Windows doesn't allow this device to be disabled. (0xE0000231)"
+        );
+        assert_eq!(
+            err.to_string(),
+            r"Disabling ROOT\HIDCLASS\0000: Windows doesn't allow this device to be disabled. (0xE0000231)"
+        );
+    }
 }
