@@ -236,6 +236,11 @@ impl ConfigureApp {
             return;
         }
 
+        // egui labels are selectable text by default, and a selectable label
+        // takes the click for itself, so the row never sees it. Rows are
+        // the click target here; the footer keeps the chosen ID copyable.
+        ui.style_mut().interaction.selectable_labels = false;
+
         let mut clicked: Option<String> = None;
         let row_height = ui.text_style_height(&egui::TextStyle::Body) + 6.0;
         TableBuilder::new(ui)
@@ -294,6 +299,14 @@ impl ConfigureApp {
 
 impl eframe::App for ConfigureApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.show(ui);
+    }
+}
+
+impl ConfigureApp {
+    /// Draw the whole window. Separate from [`eframe::App::ui`] so tests can
+    /// drive it headlessly with `egui_kittest`.
+    fn show(&mut self, ui: &mut egui::Ui) {
         let ctx = ui.ctx().clone();
         self.poll_devices();
 
@@ -354,5 +367,127 @@ fn position_near_cursor(inner_size: egui::Vec2) -> Option<egui::Pos2> {
             },
         );
         Some(egui::pos2(x as f32 / scale, y as f32 / scale))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui_kittest::Harness;
+    use egui_kittest::kittest::Queryable;
+
+    const PEN: &str = r"HID\ELAN2D25&COL02\5&2B77D6B&0&0001";
+    const TOUCH: &str = r"HID\ELAN2D25&COL01\5&2B77D6B&0&0000";
+
+    fn device(id: &str, description: &str) -> DeviceInfo {
+        DeviceInfo {
+            instance_id: id.into(),
+            description: description.into(),
+            manufacturer: "ELAN".into(),
+            class: HID_CLASS.into(),
+            problem: 0,
+        }
+    }
+
+    /// The window with a fixed device list and a config in a temp folder.
+    fn harness(dir: &std::path::Path) -> Harness<'static, ConfigureApp> {
+        let app = ConfigureApp {
+            config: Config::new(dir),
+            devices: Devices::Loaded(vec![
+                device(TOUCH, "HID-compliant touch screen"),
+                device(PEN, "HID-compliant pen"),
+            ]),
+            show_all: false,
+            filter: String::new(),
+            selected: None,
+            error: None,
+            revealed_selection: true,
+        };
+        let mut harness = Harness::builder()
+            .with_size(WINDOW_SIZE)
+            .build_ui_state(|ui, app: &mut ConfigureApp| app.show(ui), app);
+        harness.run();
+        harness
+    }
+
+    #[test]
+    fn clicking_a_rows_text_selects_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut harness = harness(temp.path());
+
+        // Clicking right on the label text, which used to start a text
+        // selection instead of selecting the row.
+        harness.get_by_label("HID-compliant pen").click();
+        harness.run();
+        assert_eq!(harness.state().selected.as_deref(), Some(PEN));
+
+        harness.get_by_label("HID-compliant touch screen").click();
+        harness.run();
+        assert_eq!(harness.state().selected.as_deref(), Some(TOUCH));
+    }
+
+    #[test]
+    fn clicking_other_columns_selects_the_row() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut harness = harness(temp.path());
+
+        // Rows are sorted by description: pen first, then the touch screen.
+        harness.get_all_by_label("ELAN").nth(1).unwrap().click();
+        harness.run();
+        assert_eq!(harness.state().selected.as_deref(), Some(TOUCH));
+    }
+
+    #[test]
+    fn clicking_the_selected_row_again_clears_it() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut harness = harness(temp.path());
+
+        harness.get_by_label("HID-compliant pen").click();
+        harness.run();
+        harness.get_by_label("HID-compliant pen").click();
+        harness.run();
+        assert_eq!(harness.state().selected, None);
+    }
+
+    #[test]
+    fn ok_saves_the_selected_device() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut harness = harness(temp.path());
+
+        harness.get_by_label("HID-compliant pen").click();
+        harness.run();
+        harness.get_by_label("OK").click();
+        harness.run();
+
+        let saved = Config::new(temp.path()).read().unwrap();
+        assert_eq!(saved.as_deref(), Some(PEN));
+        assert_eq!(harness.state().error, None);
+    }
+
+    #[test]
+    fn ok_does_nothing_without_a_selection() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut harness = harness(temp.path());
+
+        harness.get_by_label("OK").click();
+        harness.run();
+        assert_eq!(Config::new(temp.path()).read().unwrap(), None);
+    }
+
+    #[test]
+    fn failed_save_keeps_the_window_open_with_an_error() {
+        let temp = tempfile::tempdir().unwrap();
+        // A directory where the config file should go makes the write fail.
+        std::fs::create_dir_all(temp.path().join(config::CONFIG_FILE_NAME)).unwrap();
+        let mut harness = harness(temp.path());
+
+        harness.get_by_label("HID-compliant pen").click();
+        harness.run();
+        harness.get_by_label("OK").click();
+        harness.run();
+
+        let error = harness.state().error.clone().expect("error shown");
+        assert!(error.starts_with("Couldn't save to"), "{error}");
+        assert_eq!(harness.state().selected.as_deref(), Some(PEN));
     }
 }
