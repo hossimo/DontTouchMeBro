@@ -144,7 +144,7 @@ impl ConfigureApp {
         ui.heading("Choose the device the tray icon enables and disables");
         ui.label(
             "Touch screens are usually listed as \"HID-compliant touch screen\". \
-             Click a row to select it.",
+             Click a device to select it (its button fills in), then press OK.",
         );
         ui.add_space(4.0);
         ui.horizontal(|ui| {
@@ -243,17 +243,25 @@ impl ConfigureApp {
 
         let mut clicked: Option<String> = None;
         let row_height = ui.text_style_height(&egui::TextStyle::Body) + 6.0;
+        // Widths are worked out from the current window size every frame
+        // (and the columns aren't user-resizable, which would freeze them),
+        // so the table always fits the window: the description column takes
+        // whatever the others leave.
+        let manufacturer_width = (ui.available_width() * 0.22).clamp(110.0, 260.0);
         TableBuilder::new(ui)
             .striped(true)
-            .resizable(true)
+            .resizable(false)
             .sense(egui::Sense::click())
+            .auto_shrink([false, false])
+            .min_scrolled_height(0.0)
             .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
-            .column(Column::remainder().at_least(200.0).clip(true))
-            .column(Column::initial(150.0).at_least(60.0).clip(true))
-            .column(Column::initial(110.0).at_least(60.0).clip(true))
-            .column(Column::initial(150.0).at_least(60.0).clip(true))
+            .column(Column::exact(28.0))
+            .column(Column::remainder().at_least(120.0).clip(true))
+            .column(Column::exact(manufacturer_width).clip(true))
+            .column(Column::exact(110.0).clip(true))
+            .column(Column::exact(150.0).clip(true))
             .header(row_height, |mut header| {
-                for title in ["Description", "Manufacturer", "Class", "Status"] {
+                for title in ["", "Description", "Manufacturer", "Class", "Status"] {
                     header.col(|ui| {
                         ui.strong(title);
                     });
@@ -267,6 +275,13 @@ impl ConfigureApp {
                         .as_deref()
                         .is_some_and(|id| listing::same_device(id, &device.instance_id));
                     row.set_selected(is_selected);
+                    // A radio button makes the current choice obvious; it
+                    // selects the row just like clicking anywhere else on it.
+                    row.col(|ui| {
+                        if ui.radio(is_selected, "").clicked() {
+                            clicked = Some(device.instance_id.clone());
+                        }
+                    });
                     row.col(|ui| {
                         ui.label(device.display_name());
                     });
@@ -279,7 +294,9 @@ impl ConfigureApp {
                     row.col(|ui| {
                         ui.label(describe_problem(device.problem));
                     });
-                    if row.response().on_hover_text(&device.instance_id).clicked() {
+                    // Full name (it may be cut short) and the instance ID.
+                    let tooltip = format!("{}\n{}", device.display_name(), device.instance_id);
+                    if row.response().on_hover_text(tooltip).clicked() {
                         clicked = Some(device.instance_id.clone());
                     }
                 });
@@ -433,6 +450,21 @@ mod tests {
 
         // Rows are sorted by description: pen first, then the touch screen.
         harness.get_all_by_label("ELAN").nth(1).unwrap().click();
+        harness.run();
+        assert_eq!(harness.state().selected.as_deref(), Some(TOUCH));
+    }
+
+    #[test]
+    fn clicking_a_radio_button_selects_its_row() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut harness = harness(temp.path());
+
+        // Rows are sorted by description: pen first, then the touch screen.
+        harness
+            .get_all_by_role(egui::accesskit::Role::RadioButton)
+            .nth(1)
+            .unwrap()
+            .click();
         harness.run();
         assert_eq!(harness.state().selected.as_deref(), Some(TOUCH));
     }
