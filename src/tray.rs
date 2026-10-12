@@ -49,6 +49,8 @@ const WM_TRAY: u32 = WM_APP + 1;
 const WM_CONFIGURE_CLOSED: u32 = WM_APP + 2;
 /// Posted by a second instance so the running one can say it's already here.
 const WM_ALREADY_RUNNING: u32 = WM_APP + 3;
+/// Posted by the toggle worker thread; lParam is a `Box<ToggleReport>`.
+const WM_TOGGLE_DONE: u32 = WM_APP + 4;
 
 const WINDOW_CLASS: PCWSTR = w!("DontTouchMeBroTrayWindow");
 /// Same name the C# version used, so old and new builds never run together.
@@ -79,6 +81,21 @@ static TASKBAR_CREATED: AtomicU32 = AtomicU32::new(0);
 
 thread_local! {
     static TRAY: RefCell<Option<Tray>> = const { RefCell::new(None) };
+    /// Toggle results waiting to be applied. A result can arrive while the
+    /// tray state is borrowed (e.g. a message box's modal loop); it waits
+    /// here instead of being dropped, which would leave the tray stuck in
+    /// "Working on it...".
+    static PENDING_REPORTS: RefCell<Vec<toggle::ToggleReport>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Apply any queued toggle results, if the tray state is free.
+fn apply_pending_reports() {
+    with_tray(|tray| {
+        let reports = PENDING_REPORTS.with(|pending| std::mem::take(&mut *pending.borrow_mut()));
+        for report in reports {
+            tray.toggle_done(report);
+        }
+    });
 }
 
 /// Run the tray until the user chooses Exit.
@@ -134,6 +151,7 @@ pub fn run() -> Result<(), String> {
         backend,
         configure_pid: None,
         last_toggle: None,
+        toggling: false,
     };
     tray.add_icon();
     if tray.state == DeviceState::NotConfigured {
@@ -169,8 +187,10 @@ struct Tray {
     backend: SetupApi,
     /// Process ID of the open Configure window, if any.
     configure_pid: Option<u32>,
-    /// When the last click-to-toggle finished; see [`Tray::toggle`].
+    /// When the last toggle started or finished; see [`Tray::on_click`].
     last_toggle: Option<Instant>,
+    /// A toggle is running on a worker thread; see [`Tray::toggle`].
+    toggling: bool,
 }
 
 impl Tray {
@@ -256,8 +276,42 @@ impl Tray {
         self.toggle();
     }
 
+    /// Start toggling the device on a worker thread. Windows can take
+    /// seconds to answer (it asks every program with the device open
+    /// whether it may be stopped), and the tray must keep responding
+    /// meanwhile. The result comes back as [`WM_TOGGLE_DONE`].
     fn toggle(&mut self) {
-        let report = toggle::toggle(&self.backend, self.configured.as_deref());
+        if self.toggling {
+            return;
+        }
+        self.toggling = true;
+        self.last_toggle = Some(Instant::now());
+
+        let backend = self.backend;
+        let configured = self.configured.clone();
+        // HWND isn't Send; pass the raw value to the worker thread.
+        let hwnd = self.hwnd.0 as isize;
+        std::thread::spawn(move || {
+            let report = Box::new(toggle::toggle(&backend, configured.as_deref()));
+            let report = Box::into_raw(report) as isize;
+            let posted = unsafe {
+                PostMessageW(
+                    Some(HWND(hwnd as *mut _)),
+                    WM_TOGGLE_DONE,
+                    WPARAM(0),
+                    LPARAM(report),
+                )
+            };
+            if posted.is_err() {
+                // The window is gone (the app is exiting); free the report.
+                drop(unsafe { Box::from_raw(report as *mut toggle::ToggleReport) });
+            }
+        });
+    }
+
+    /// The worker thread's result: update the icon, log, and tell the user.
+    fn toggle_done(&mut self, report: toggle::ToggleReport) {
+        self.toggling = false;
         self.last_toggle = Some(Instant::now());
         if let Some(message) = &report.log {
             logging::error(message);
@@ -352,6 +406,8 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
             LRESULT(0)
         }
         WM_TIMER if wparam.0 == POLL_TIMER_ID => {
+            // Also picks up any toggle result that arrived while busy.
+            apply_pending_reports();
             with_tray(Tray::refresh);
             LRESULT(0)
         }
@@ -365,6 +421,15 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
                 tray.configure_pid = None;
                 tray.reload_config();
             });
+            LRESULT(0)
+        }
+        WM_TOGGLE_DONE => {
+            // Take ownership back from the worker thread, queue the result,
+            // and apply it now if the tray state is free (otherwise the
+            // next timer tick does).
+            let report = unsafe { Box::from_raw(lparam.0 as *mut toggle::ToggleReport) };
+            PENDING_REPORTS.with(|pending| pending.borrow_mut().push(*report));
+            apply_pending_reports();
             LRESULT(0)
         }
         WM_ALREADY_RUNNING => {
@@ -396,6 +461,9 @@ extern "system" fn window_proc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPA
 fn show_menu(hwnd: HWND) {
     // Re-read the device first so the toggle item matches its real state.
     let Some((toggle_text, can_toggle)) = with_tray(|tray| {
+        if tray.toggling {
+            return ("Working on it...".to_string(), false);
+        }
         tray.refresh();
         toggle::menu_item(&tray.state)
     }) else {

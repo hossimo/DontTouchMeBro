@@ -6,18 +6,19 @@
 
 use windows::Win32::Devices::DeviceAndDriverInstallation::{
     CM_DEVNODE_STATUS_FLAGS, CM_DISABLE_PERSIST, CM_DISABLE_UI_NOT_OK, CM_DRP_CLASS,
-    CM_DRP_DEVICEDESC, CM_DRP_FRIENDLYNAME, CM_DRP_MFG, CM_Disable_DevNode, CM_Enable_DevNode,
-    CM_Get_DevNode_PropertyW, CM_Get_DevNode_Registry_PropertyW, CM_Get_DevNode_Status,
-    CM_Get_Device_IDW, CM_Get_Parent, CM_LOCATE_DEVNODE_FLAGS, CM_LOCATE_DEVNODE_NORMAL,
-    CM_LOCATE_DEVNODE_PHANTOM, CM_Locate_DevNodeW, CM_MapCrToWin32Err, CM_PROB, CONFIGRET,
-    CR_BUFFER_SMALL, CR_NO_SUCH_DEVNODE, CR_NOT_DISABLEABLE, CR_REMOVE_VETOED, CR_SUCCESS,
-    DI_NEEDREBOOT, DI_NEEDRESTART, DICS_DISABLE, DICS_ENABLE, DICS_FLAG_CONFIGSPECIFIC,
-    DICS_FLAG_GLOBAL, DIF_PROPERTYCHANGE, DIGCF_ALLCLASSES, DIGCF_PRESENT, DN_DISABLEABLE,
-    DN_HAS_PROBLEM, HDEVINFO, MAX_DEVICE_ID_LEN, SETUP_DI_PROPERTY_CHANGE_SCOPE,
-    SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA, SP_DEVINSTALL_PARAMS_W, SP_PROPCHANGE_PARAMS,
-    SetupDiCallClassInstaller, SetupDiCreateDeviceInfoList, SetupDiDestroyDeviceInfoList,
-    SetupDiEnumDeviceInfo, SetupDiGetClassDevsW, SetupDiGetDeviceInstallParamsW,
-    SetupDiOpenDeviceInfoW, SetupDiSetClassInstallParamsW,
+    CM_DRP_CONFIGFLAGS, CM_DRP_DEVICEDESC, CM_DRP_FRIENDLYNAME, CM_DRP_MFG, CM_Disable_DevNode,
+    CM_Enable_DevNode, CM_Get_DevNode_PropertyW, CM_Get_DevNode_Registry_PropertyW,
+    CM_Get_DevNode_Status, CM_Get_Device_IDW, CM_Get_Parent, CM_LOCATE_DEVNODE_FLAGS,
+    CM_LOCATE_DEVNODE_NORMAL, CM_LOCATE_DEVNODE_PHANTOM, CM_Locate_DevNodeW, CM_MapCrToWin32Err,
+    CM_PROB, CONFIGFLAG_DISABLED, CONFIGRET, CR_BUFFER_SMALL, CR_NO_SUCH_DEVNODE,
+    CR_NOT_DISABLEABLE, CR_REMOVE_VETOED, CR_SUCCESS, DI_NEEDREBOOT, DI_NEEDRESTART, DICS_DISABLE,
+    DICS_ENABLE, DICS_FLAG_CONFIGSPECIFIC, DICS_FLAG_GLOBAL, DIF_PROPERTYCHANGE, DIGCF_ALLCLASSES,
+    DIGCF_PRESENT, DN_DISABLEABLE, DN_HAS_PROBLEM, HDEVINFO, MAX_DEVICE_ID_LEN,
+    SETUP_DI_PROPERTY_CHANGE_SCOPE, SP_CLASSINSTALL_HEADER, SP_DEVINFO_DATA,
+    SP_DEVINSTALL_PARAMS_W, SP_PROPCHANGE_PARAMS, SetupDiCallClassInstaller,
+    SetupDiCreateDeviceInfoList, SetupDiDestroyDeviceInfoList, SetupDiEnumDeviceInfo,
+    SetupDiGetClassDevsW, SetupDiGetDeviceInstallParamsW, SetupDiOpenDeviceInfoW,
+    SetupDiSetClassInstallParamsW,
 };
 use windows::Win32::Devices::Properties::{
     DEVPKEY_Device_BusReportedDeviceDesc, DEVPKEY_Device_ContainerId, DEVPROP_TYPE_GUID,
@@ -134,11 +135,19 @@ pub fn set_device_enabled(instance_id: &str, enable: bool) -> Result<ChangeOutco
     match cr {
         CR_SUCCESS => {}
         CR_REMOVE_VETOED => {
-            return Err(DeviceError::with_context(
-                context,
-                "Something is using the device, so Windows wouldn't stop it. \
-                 Close whatever is using it (or restart) and try again.",
-            ));
+            // A program (often the vendor's own software) has the device open
+            // and refused to let it go. With CM_DISABLE_PERSIST, Windows still
+            // records the disable for the next restart, so undo that: the
+            // device should stay as it is, not vanish after a reboot.
+            unsafe { CM_Enable_DevNode(devinst, 0) };
+            let reason = if disabled_at_next_restart(devinst) {
+                "Another program has the device open, so Windows wouldn't stop it, and it \
+                 will be disabled when Windows restarts. Quit that program and try again."
+            } else {
+                "Another program has the device open (often the maker's own software), so \
+                 Windows wouldn't stop it. Quit that program and try again."
+            };
+            return Err(DeviceError::with_context(context, reason));
         }
         CR_NOT_DISABLEABLE => {
             return Err(DeviceError::with_context(
@@ -156,6 +165,24 @@ pub fn set_device_enabled(instance_id: &str, enable: bool) -> Result<ChangeOutco
     Ok(ChangeOutcome {
         restart_required: problem == problem::RESTART_REQUIRED,
     })
+}
+
+/// Whether the device is marked to be disabled from the next restart
+/// (`CONFIGFLAG_DISABLED`), whatever its state right now.
+fn disabled_at_next_restart(devinst: u32) -> bool {
+    let mut flags = 0u32;
+    let mut bytes = size_of::<u32>() as u32;
+    let cr = unsafe {
+        CM_Get_DevNode_Registry_PropertyW(
+            devinst,
+            CM_DRP_CONFIGFLAGS,
+            None,
+            Some((&mut flags as *mut u32).cast()),
+            &mut bytes,
+            0,
+        )
+    };
+    cr == CR_SUCCESS && flags & CONFIGFLAG_DISABLED.0 != 0
 }
 
 /// Problem code and `DN_DISABLEABLE` for a present devnode.
