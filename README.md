@@ -1,7 +1,10 @@
 # DontTouchMeBro
 
 ## What is this thing.
-Very simple C# Application that enables and disables a device by its Device Instance Path.
+A small Windows tray app, written in Rust, that enables and disables a device by its Device Instance Path.
+Click the tray icon to toggle the device; the icon shows whether it's currently enabled.
+
+[![Build](https://github.com/hossimo/DontTouchMeBro/actions/workflows/build.yml/badge.svg)](https://github.com/hossimo/DontTouchMeBro/actions/workflows/build.yml)
 
 ## Why
 Well I purchased a new Dell XPS 15 Laptop. and at the time to get the OLED screen you had to get a touch screen. I had no real need for the touch screen do I did a little digging and found that I could disable it by entering the command:
@@ -16,9 +19,8 @@ Then I got a little tired of that and made this really simple application that r
 
 Job done...
 
-## What's Next
-
-Well Maybe I'll flush it out to ask the user for a Device instance path and store it in a file or registry, but to be honest it works for me at this point so that might take a while.
+Version 2 is a rewrite in Rust (it was C#/WinForms up to 1.0.0.13). It no
+longer needs .NET at all: the whole app is one ~12 MB exe.
 
 ## Installing
 
@@ -29,9 +31,13 @@ installed:
 ./make-installer.ps1
 ```
 
-This publishes a self-contained exe (no .NET runtime needed) and compiles the
-installer. The two steps can also be run individually — `./build.ps1` to
-publish, then `ISCC.exe installer\DontTouchMeBro.iss` to compile.
+This builds the exe with Cargo and compiles the installer. The two steps can
+also be run individually — `./build.ps1` to build, then
+`ISCC.exe installer\DontTouchMeBro.iss` to compile.
+
+Every push and pull request is also built by
+[GitHub Actions](https://github.com/hossimo/DontTouchMeBro/actions/workflows/build.yml),
+which uploads the exe and the installer as a build artifact.
 
 The resulting `installer\Output\DontTouchMeBro-Setup-*.exe` installs **for all
 users into `C:\Program Files\DontTouchMeBro`** and needs Administrator to
@@ -107,15 +113,29 @@ asks you to click **Yes**), none of this applies.
 
 ## How do I make it work my Device or Touch Screen
 
-The easiest way is to launch the app and pick your device from the tray icon's
-**Configure** dialog. Your choice is saved to
-`%APPDATA%\DontTouchMeBro\device-id.txt`.
+The easiest way is to launch the app, right-click the tray icon and choose
+**Configure**. It lists your HID devices by product name (for example
+"Keychron Q6 HE"), with what each one is in the **Type** column: a touch
+screen is "Touch screen", a pen "Pen". Hover a row to see the name Windows
+uses and the Device Instance Path. Tick **Show all device classes** to pick
+any other kind of device. Devices Windows won't let you
+disable (some virtual and system devices) aren't listed, since the app could
+never turn them off. Click a row, then **OK**. Your
+choice is saved to `%APPDATA%\DontTouchMeBro\device-id.txt`, and the tray
+picks it up straight away.
 
 You can also create that file yourself: put your specific Device Instance Path
 in `%APPDATA%\DontTouchMeBro\device-id.txt`. (Older versions kept this file next
 to the executable; on first run the app migrates it to the new location
 automatically.)
 
+
+## Where are the logs?
+
+Errors (for example a device that refused to toggle) are written to
+`%APPDATA%\DontTouchMeBro\DontTouchMeBro.log`. If the app ever crashes it
+also writes `fatal_error.log` there. Right-click the tray icon and choose
+**Reveal in File Explorer** to open that folder.
 
 ## How do I find my Device Instance Path?
 
@@ -141,3 +161,34 @@ and clear "Stop the task if it runs longer than").
 
 ## Hey, so if this asks for app ask for Admin rights can I trust it?
 In a short, No; never blindly trust someone you don't know. I tried to do the right thing but you trust you.
+
+## Building from source
+
+You need [Rust](https://rustup.rs/) (stable, MSVC toolchain) and the Windows
+SDK that comes with the Visual Studio C++ build tools.
+
+```powershell
+cargo build              # debug build: target\debug\DontTouchMeBro.exe
+cargo test               # unit tests + read-only device enumeration tests
+cargo clippy --all-targets -- -D warnings
+.\build.ps1              # release build copied to dist\win-x64
+.\make-installer.ps1     # release build + Inno Setup installer
+```
+
+The exe asks for Administrator when it starts (enabling and disabling devices
+needs it). To try the UI without the UAC prompt, build with
+`$env:DTMB_AS_INVOKER = "1"; cargo build`. That build can list devices and
+open the Configure window, but toggling a device fails with "Access is
+denied". Don't ship it.
+
+How it fits together:
+
+| File | What it does |
+|------|--------------|
+| `src/tray.rs` | The tray process: hidden window, notification icon, menu, balloons, re-adding the icon when Explorer restarts. |
+| `src/configure.rs` | The Configure window (egui). Runs as `DontTouchMeBro.exe --configure`, started by the tray. |
+| `src/device.rs` | Device access through SetupAPI / Configuration Manager (the same APIs as Device Manager and `pnputil`). |
+| `src/toggle.rs` | What a click does, kept separate from Windows so it can be unit tested. |
+| `src/config.rs` | Reading and writing `device-id.txt`. |
+| `build.rs` + `app.manifest` | Embeds the manifest (Administrator, DPI awareness), icons and version info. |
+

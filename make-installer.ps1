@@ -1,25 +1,21 @@
 <#
 .SYNOPSIS
-    Publishes DontTouchMeBro and compiles the Inno Setup installer in one step.
+    Builds DontTouchMeBro and compiles the Inno Setup installer in one step.
 
 .DESCRIPTION
-    Runs build.ps1 (self-contained single-file publish) and then compiles
+    Runs build.ps1 (cargo release build) and then compiles
     installer\DontTouchMeBro.iss with Inno Setup's command-line compiler (ISCC).
-    The installer's version is read from the published exe, so passing -Version
-    here flows all the way through to the setup filename.
+    The installer's version is read from the built exe, which gets it from
+    Cargo.toml, so the setup filename always matches the app version.
 
     Finds ISCC.exe automatically in the usual per-user and machine install
     locations, or pass -Iscc to point at it explicitly.
 
 .PARAMETER Configuration
-    MSBuild configuration passed to build.ps1. Default: Release.
-
-.PARAMETER Version
-    Optional version override (e.g. 1.1.0.0) passed to build.ps1. When omitted,
-    the version from Properties/AssemblyInfo.cs is used.
+    Build configuration passed to build.ps1 (Release or Debug). Default: Release.
 
 .PARAMETER SkipBuild
-    Skip the publish step and just compile the installer against whatever is
+    Skip the build step and just compile the installer against whatever is
     already in dist\win-x64.
 
 .PARAMETER Iscc
@@ -27,20 +23,15 @@
 
 .EXAMPLE
     .\make-installer.ps1
-    Publish + compile; installer written to installer\Output.
-
-.EXAMPLE
-    .\make-installer.ps1 -Version 1.1.0.0
-    Stamp the build as 1.1.0.0 and produce DontTouchMeBro-Setup-1.1.0.0.exe.
+    Build + compile; installer written to installer\Output.
 
 .EXAMPLE
     .\make-installer.ps1 -SkipBuild
-    Recompile the installer without republishing.
+    Recompile the installer without rebuilding.
 #>
 [CmdletBinding()]
 param(
     [string]$Configuration = 'Release',
-    [string]$Version       = '',
     [switch]$SkipBuild,
     [string]$Iscc          = ''
 )
@@ -60,12 +51,16 @@ function Find-Iscc {
         throw "ISCC not found at the path passed via -Iscc: $Override"
     }
 
-    $candidates = @(
-        "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
-        "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
-        "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
-    )
-    $hit = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    # Any "Inno Setup <major>" folder, newest first, in the per-user and
+    # machine install locations.
+    $roots = @("$env:LOCALAPPDATA\Programs", ${env:ProgramFiles(x86)}, $env:ProgramFiles) |
+        Where-Object { $_ -and (Test-Path $_) }
+    $hit = $roots |
+        ForEach-Object { Get-ChildItem -Path $_ -Directory -Filter 'Inno Setup*' -ErrorAction SilentlyContinue } |
+        Sort-Object Name -Descending |
+        ForEach-Object { Join-Path $_.FullName 'ISCC.exe' } |
+        Where-Object { Test-Path $_ } |
+        Select-Object -First 1
     if ($hit) { return $hit }
 
     $cmd = Get-Command iscc -ErrorAction SilentlyContinue
@@ -77,14 +72,12 @@ function Find-Iscc {
 $isccPath = Find-Iscc -Override $Iscc
 Write-Host "==> Using ISCC: $isccPath" -ForegroundColor Cyan
 
-# --- Publish ---------------------------------------------------------------
+# --- Build -----------------------------------------------------------------
 if (-not $SkipBuild) {
-    $buildArgs = @{ Configuration = $Configuration }
-    if ($Version) { $buildArgs['Version'] = $Version }
-    & $buildPs1 @buildArgs
-    if ($LASTEXITCODE -ne 0) { throw "build.ps1 failed with exit code $LASTEXITCODE" }
+    # build.ps1 throws on failure, which stops this script too.
+    & $buildPs1 -Configuration $Configuration
 } else {
-    Write-Host "==> Skipping publish (-SkipBuild)" -ForegroundColor Yellow
+    Write-Host "==> Skipping build (-SkipBuild)" -ForegroundColor Yellow
 }
 
 # --- Compile installer -----------------------------------------------------

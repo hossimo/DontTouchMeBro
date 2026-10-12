@@ -1,0 +1,61 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      # Unit tests plus read-only device enumeration tests; nothing is ever
+      # enabled or disabled on the runner.
+      - name: Test
+        run: cargo test --locked
+
+      - name: Build release exe
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        shell: pwsh
+        run: ./make-installer.ps1 -SkipBuild
+
+      - name: Upload exe and installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: DontTouchMeBro-${{ github.sha }}
+          path: |
+            dist/win-x64/DontTouchMeBro.exe
+            installer/Output/DontTouchMeBro-Setup-*.exe
+          if-no-files-found: error

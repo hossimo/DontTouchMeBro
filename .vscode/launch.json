@@ -2,14 +2,24 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Debug DontTouchMeBro",
-            "type": "coreclr",
+            // The exe requires Administrator, so start VS Code elevated to debug it.
+            "name": "Debug DontTouchMeBro (tray)",
+            "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/DontTouchMeBro/bin/Debug/net10.0-windows/DontTouchMeBro.exe",
+            "program": "${workspaceFolder}/target/debug/DontTouchMeBro.exe",
             "args": [],
-            "cwd": "${workspaceFolder}/DontTouchMeBro/bin/Debug/net10.0-windows",
-            "stopAtEntry": false,
-            "console": "internalConsole",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "preLaunchTask": "build"
+        },
+        {
+            "name": "Debug DontTouchMeBro (Configure window)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/DontTouchMeBro.exe",
+            "args": ["--configure"],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
             "preLaunchTask": "build"
         }
     ]

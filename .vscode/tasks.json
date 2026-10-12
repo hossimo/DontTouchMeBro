@@ -3,15 +3,19 @@
     "tasks": [
         {
             "label": "build",
-            "command": "dotnet",
             "type": "process",
-            "args": [
-                "build",
-                "${workspaceFolder}/DontTouchMeBro/DontTouchMeBro.csproj",
-                "/property:GenerateFullPaths=true",
-                "/consoleloggerparameters:NoSummary"
-            ],
-            "problemMatcher": "$msCompile"
+            "command": "cargo",
+            "args": ["build"],
+            "problemMatcher": "$rustc",
+            "group": { "kind": "build", "isDefault": true }
+        },
+        {
+            "label": "test",
+            "type": "process",
+            "command": "cargo",
+            "args": ["test"],
+            "problemMatcher": "$rustc",
+            "group": { "kind": "test", "isDefault": true }
         },
         {
             "label": "run-elevated",
@@ -19,7 +23,22 @@
             "command": "Start-Process",
             "args": [
                 "-FilePath",
-                "'${workspaceFolder}\\DontTouchMeBro\\bin\\Debug\\net10.0-windows\\DontTouchMeBro.exe'",
+                "'${workspaceFolder}\\target\\debug\\DontTouchMeBro.exe'",
+                "-Verb",
+                "RunAs"
+            ],
+            "dependsOn": "build",
+            "problemMatcher": []
+        },
+        {
+            "label": "run-configure-elevated",
+            "type": "shell",
+            "command": "Start-Process",
+            "args": [
+                "-FilePath",
+                "'${workspaceFolder}\\target\\debug\\DontTouchMeBro.exe'",
+                "-ArgumentList",
+                "--configure",
                 "-Verb",
                 "RunAs"
             ],
